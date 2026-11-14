@@ -1,0 +1,29 @@
+# Godot cache and editor data
+.godot/
+*.tmp
+*.translation
+
+# Exported builds
+build/
+
+# Export credentials (keystores, passwords) - never commit
+export_credentials.cfg
+*.keystore
+.godot/export_credentials.cfg
+
+# Blender backups and autosaves
+*.blend1
+*.blend2
+*.blend@
+
+# Python
+__pycache__/
+*.pyc
+
+# Check/test output
+tests/output/
+
+# OS clutter
+Thumbs.db
+desktop.ini
+.DS_Store
