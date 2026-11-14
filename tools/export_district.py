@@ -131,8 +131,29 @@ def export_district():
     export_glb(os.path.join(OUT, "district_downtown.glb"))
 
 
+def export_roads():
+    """Road centrelines near the district, in Godot coordinates, for street dressing
+    (sidewalks, crosswalks, lamps, poles, signs) and pedestrian paths."""
+    import json
+    with open(os.path.join(ROOT, "blender", "monrovia_map.json")) as f:
+        roads = json.load(f)["roads"]
+    out = []
+    for i, r in enumerate(roads):
+        pts = r["p"]
+        if not any(TX0 - 6 <= x <= TX1 + 6 and TY0 - 6 <= y <= TY1 + 6 for x, y in pts):
+            continue
+        out.append({"id": i, "name": r["n"], "width": r["w"] * T,
+                    "points": [[round(x * T - CX, 3), round(y * T + CY, 3)] for x, y in pts]})
+    half = [(X1 - X0) / 2, (Y1 - Y0) / 2]
+    path = os.path.join(ROOT, "proto3d", "data", "roads.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump({"tile": T, "half_extent": half, "roads": out}, f, indent=1)
+    print("wrote", path, len(out), "roads")
+
+
 def export_vehicles():
-    for kind in ("taxi", "car", "police"):
+    for kind in ("taxi", "car", "police", "keke", "suv"):
         bpy.ops.wm.read_factory_settings(use_empty=True)
         if kind == "car":
             ms.sedan(ms.srgb("#c8173a"))
@@ -145,6 +166,7 @@ def export_vehicles():
 
 
 print("district bounds (Blender m): X %.0f..%.0f  Y %.0f..%.0f  centre (%.0f, %.0f)" % (X0, X1, Y0, Y1, CX, CY))
+export_roads()
 export_district()
 export_vehicles()
 print("EXPORT DONE")

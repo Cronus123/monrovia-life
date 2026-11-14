@@ -9,6 +9,7 @@ var m
 var frame := 0
 var fps_samples := {}
 var shot := ""
+var _dt := 0.016
 
 
 func _initialize() -> void:
@@ -25,10 +26,11 @@ func _save(name: String) -> void:
 func _sample(name: String) -> void:
 	if not fps_samples.has(name):
 		fps_samples[name] = []
-	fps_samples[name].append(Engine.get_frames_per_second())
+	fps_samples[name].append(1.0 / maxf(_dt, 0.001))   # per-frame, not the 1 s average
 
 
 func _process(_d: float) -> bool:
+	_dt = _d
 	frame += 1
 	if frame == 2:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -41,22 +43,22 @@ func _process(_d: float) -> bool:
 		Input.action_release("p3_forward")
 		_save("third_person")
 		m.rig.toggle_view()
-	if frame > 300 and frame < 400:
+	if frame > 320 and frame < 400:
 		_sample("first_person")
 	if frame == 400:
 		_save("first_person")
 		m.rig.toggle_view()
 		var c = m.cars[1]   # the red car: clear road ahead (the taxi is parked behind it)
-		m.player.global_position = c.global_position + Vector3(0.0, 0.5, 2.0)
+		m.player.global_position = c.exit_point()
 	if frame == 410:
-		m.enter_car(m.nearest_car())
+		m.enter_car(m.cars[1])
 		Input.action_press("p3_forward")
-	if frame > 480 and frame < 600:
+	if frame > 500 and frame < 600:
 		_sample("in_car_chase")
 	if frame == 600:
 		_save("in_car_chase")
 		m.rig.toggle_view()
-	if frame > 650 and frame < 720:
+	if frame > 640 and frame < 720:
 		_sample("in_car_first_person")
 	if frame == 720:
 		Input.action_release("p3_forward")
@@ -66,7 +68,8 @@ func _process(_d: float) -> bool:
 			var total := 0.0
 			for v in a:
 				total += v
-			print("FPS %s: avg %.0f, min %.0f" % [k, total / a.size(), a.min()])
+			a.sort()
+			print("FPS %s: avg %.0f, 1%% low %.0f" % [k, total / a.size(), a[int(a.size() * 0.01)]])
 		print("CAPTURE DONE")
 		return true
 	return false

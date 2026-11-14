@@ -44,7 +44,7 @@ func _process(_delta: float) -> void:
 	var view: String = "First person" if main.rig.is_first_person() else "Third person"
 	var where := "On foot"
 	if main.car != null:
-		where = "Driving  %d km/h" % main.car.kmh()
+		where = "Driving  %d km/h  |  Damage %d%%" % [main.car.kmh(), int(main.car.damage)]
 	var mouse := "" if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else "   (click to capture the mouse)"
 	_status.text = "%s  |  %s  |  %d FPS%s" % [view, where, Engine.get_frames_per_second(), mouse]
 	var near: bool = main.car == null and main.nearest_car() != null
