@@ -41,9 +41,11 @@ func _ready() -> void:
 	_spawn = global_transform
 
 
-## Driver's eye point for the in-car view (left-hand drive).
+## Eye point for the close-up driving view: a hood camera just in front of the
+## windscreen. (The low-poly cabins are solid blocks, so a true seat camera would see
+## only the inside of the roof; a proper interior needs a modelled cockpit.)
 func first_person_point() -> Vector3:
-	return global_transform * Vector3(-0.42, 1.28, -0.15)
+	return global_transform * Vector3(0.0, 1.32, -1.35)
 
 
 ## Where the player stands after getting out (driver's side).
@@ -98,8 +100,9 @@ func _physics_process(delta: float) -> void:
 	# Tilt the body to the ground (ramps onto bridges) and lean a little in turns.
 	var n := get_floor_normal() if is_on_floor() else Vector3.UP
 	var local_n := global_basis.inverse() * n
-	var pitch_t := atan2(local_n.z, local_n.y)      # nose up when the ground rises ahead (-Z)
-	var roll_t := -atan2(local_n.x, local_n.y) - turn * 0.06
+	# Capped so seams in the road/terrain mesh can't tip the body over visibly.
+	var pitch_t := clampf(atan2(local_n.z, local_n.y), -0.16, 0.16)   # nose up when the ground rises ahead (-Z)
+	var roll_t := clampf(-atan2(local_n.x, local_n.y) - turn * 0.06, -0.16, 0.16)
 	model.rotation.x = lerp_angle(model.rotation.x, pitch_t, clampf(delta * GRIP_TILT, 0.0, 1.0))
 	model.rotation.z = lerp_angle(model.rotation.z, roll_t, clampf(delta * GRIP_TILT, 0.0, 1.0))
 

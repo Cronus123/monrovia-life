@@ -52,7 +52,8 @@ func _ready() -> void:
 	hud = HudScript.new()
 	hud.main = self
 	add_child(hud)
-	if DisplayServer.get_name() != "headless":
+	# Browsers only allow pointer lock after a click, so on the web wait for the first click.
+	if DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
