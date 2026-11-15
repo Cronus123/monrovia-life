@@ -232,10 +232,8 @@ func _dress(who: Node3D, look: Dictionary, is_him: bool) -> void:
 			elif nm == "Detail":
 				mi.set_surface_override_material(i, shirt)
 			elif nm == "Hat":
-				if bool(look.get("hat", false)):
-					mi.set_surface_override_material(i, hat_mat)
-				else:
-					mi.visible = false
+				# the hat is part of the body mesh: hide just that surface
+				mi.set_surface_override_material(i, hat_mat if bool(look.get("hat", false)) else _invisible())
 	var gold := StandardMaterial3D.new()
 	gold.albedo_color = Color("#d4a017")
 	gold.metallic = 1.0
@@ -274,6 +272,13 @@ func _attach(who: Node3D, bone: String, mesh: Mesh, offset: Vector3, mat: Materi
 	ba.add_child(mi)
 	mi.transform = rest.affine_inverse() * Transform3D(Basis.IDENTITY, rest.origin + offset)
 	return mi
+
+
+func _invisible() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.albedo_color = Color(0, 0, 0, 0)
+	return m
 
 
 func _box_mesh(size: Vector3) -> BoxMesh:
@@ -325,7 +330,7 @@ func _label(text: String, size: int, col: Color) -> Label3D:
 	l.font_size = size
 	l.modulate = col
 	l.outline_size = 0
-	l.pixel_size = 0.01
+	l.pixel_size = 0.006
 	return l
 
 
@@ -353,6 +358,7 @@ func _build_crate() -> void:
 	horn.rotation.x = -PI / 2
 	h.add_child(horn)
 	var sign := _label("BIG TALK DWEH\nFOR SOMETHING!", 48, Color("#c8173a"))
+	sign.pixel_size = 0.0035
 	sign.position = Vector3(0, 0.35, -0.42)
 	sign.rotation.y = PI
 	h.add_child(sign)
@@ -369,12 +375,12 @@ func _build_billboard() -> void:
 	var t := _label(("SENATOR DWEH\nTHANKS YOU!" if senator else "VOTE BIG TALK DWEH"), 160, Color("#14213d"))
 	t.position = Vector3(0, 6.4, -0.14)
 	t.rotation.y = PI
-	t.pixel_size = 0.016
+	t.pixel_size = 0.0045
 	h.add_child(t)
 	var s := _label(String(data["slogan"]) + "\n" + String(data["party"]), 72, Color.WHITE)
 	s.position = Vector3(0, 4.05, -0.15)
 	s.rotation.y = PI
-	s.pixel_size = 0.011
+	s.pixel_size = 0.0045
 	h.add_child(s)
 	# his big face (a portrait made of the actual character, behind glass)
 	var face := CharacterScript.new()
@@ -436,6 +442,7 @@ func _build_house(guards: int) -> void:
 	for x in [-3.2, 3.2]:
 		_box(h, Vector3(0.9, 3.8, 0.9), Vector3(x, y0 + 1.9, -23.0), Color("#c9a227"), true)       # gate pillars
 	var name_l := _label("DWEH MANSION", 96, Color("#c9a227"))
+	name_l.pixel_size = 0.009
 	name_l.position = Vector3(0, y0 + 3.4, -23.5)
 	name_l.rotation.y = PI
 	h.add_child(name_l)
@@ -717,7 +724,7 @@ func _process(delta: float) -> void:
 	if near > 3.0 and near < 20.0:
 		npc.global_rotation.y = lerp_angle(npc.global_rotation.y, atan2(npc.global_position.x - me.x, npc.global_position.z - me.z), clampf(delta * 2.0, 0.0, 1.0))
 	_star.visible = job_available() or (blocks_missions() and not active())
-	_star.global_position = npc.global_position + Vector3(0, 3.4, 0)
+	_star.global_position = npc.global_position + Vector3(0, 4.2, 0)
 	_radio(delta)
 	_convoy(me)
 	_harass(delta, me)

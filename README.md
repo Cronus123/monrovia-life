@@ -26,6 +26,11 @@ and is tagged `v0.1-2d` in Git.
   and you're **ARRESTED**; run out of health and you're **DOWN AND OUT**, waking at JFK Medical Center.
 - **Weapons:** fists, a pistol and body armour from the weapon shops.
 - **Missions:** Auntie Musu's 5-mission story, starting at Waterside (yellow M).
+- **Big Talk Dweh:** Honourable Kpakolo "Big Talk" Dweh, an original fictional loudmouth who goes
+  from shouting on a crate at Waterside to a radio show, a campaign (convoy, rallies, rice and
+  T-shirts), a walled house off 16th Street in Sinkor and a final election-night choice: expose his
+  stolen road fund, or help make him "Senator Dweh". His own jobs, lines and grudges; all data-driven
+  (`proto3d/game/data/bigtalk.json`). He and his "Big Talk Progress Party" are made up.
 - **Side jobs and daily life:** taxi fares to real named places, cookshops that heal you, keke and
   taxi rental, and a safehouse in Fiamah, Sinkor, where you sleep and save.
 - **World:** day and night with street lights and moonlight, drifting clouds, sunsets, stars,
@@ -93,11 +98,11 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs seven checks: Godot import, start-up,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs eight checks: Godot import, start-up,
 the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
 shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
-damage, props, ragdolls, climbing, swimming). It fails on any error or warning.
+damage, props, ragdolls, climbing, swimming) and the Big Talk storyline. It fails on any error or warning.
 `tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout
