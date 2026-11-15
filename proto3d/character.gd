@@ -13,7 +13,7 @@ const PEOPLE_DIR := "res://proto3d/models/people/%s.gltf"
 const MALE_MODELS := ["Casual_Male", "Casual2_Male", "Casual3_Male", "OldClassy_Male"]
 const FEMALE_MODELS := ["Casual_Female", "Casual2_Female", "Casual3_Female"]
 const SCALE := 0.55           # pack models are ~3.2 units tall; people here are ~1.75 m
-const STATES := {"jump": "Jump", "get_in": "SitDown", "knocked": "Death"}
+const STATES := {"jump": "Jump", "get_in": "SitDown", "knocked": "Death", "punch": "Punch", "shoot": "Shoot_OneHanded"}
 
 # Palette shared with the 2D game.
 const SKIN_TONES := ["#5a3825", "#6b4329", "#4a2e1e", "#7a4e30", "#3d2618"]
@@ -182,14 +182,14 @@ func _build_tree() -> void:
 	up.animation = "Death"
 	up.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
 	sm.add_node("get_up", up)
-	var states := ["move", "jump", "get_in", "knocked", "get_up"]
+	var states := ["move", "jump", "get_in", "knocked", "get_up", "punch", "shoot"]
 	for a in states:
 		for b in states:
 			if a == b:
 				continue
 			var t := AnimationNodeStateMachineTransition.new()
 			t.xfade_time = 0.15 if b != "knocked" else 0.08
-			if a == "get_up" and b == "move":
+			if b == "move" and a in ["get_up", "punch", "shoot"]:
 				t.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
 				t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
 			sm.add_transition(a, b, t)

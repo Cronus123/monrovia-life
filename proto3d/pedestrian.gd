@@ -12,6 +12,7 @@ var _flee := 0.0
 var _flee_dir := Vector3.ZERO
 var _speed := 1.4
 var _female := false
+var waiting := false              # hailing a taxi: stands at the kerb and waves
 
 
 func setup(p: PackedVector3Array, start: int, seed_value: int) -> void:
@@ -32,6 +33,10 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	var wish := Vector3.ZERO
 	var speed := _speed
+	if waiting and not is_down() and _flee <= 0.0:
+		walk(Vector3.ZERO, 8.0, delta)
+		body.set_speed(0.0)
+		return
 	if not is_down():
 		_watch_traffic()
 		if _flee > 0.0:
@@ -65,6 +70,16 @@ func _physics_process(delta: float) -> void:
 	if not is_down() and flat.length() > 0.2:
 		body.rotation.y = lerp_angle(body.rotation.y, atan2(-velocity.x, -velocity.z), clampf(delta * 8.0, 0.0, 1.0))
 	body.set_speed(flat.length() if is_on_floor() else 0.0)
+
+
+## Run away from gunfire or an explosion at rom.
+func scare(from: Vector3) -> void:
+	if is_down():
+		return
+	var away := global_position - from
+	away.y = 0.0
+	_flee_dir = away.normalized() if away.length() > 0.1 else Vector3.RIGHT
+	_flee = 4.0
 
 
 ## Run sideways out of the way of a car coming fast.

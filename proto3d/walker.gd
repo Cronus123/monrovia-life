@@ -3,6 +3,9 @@ extends CharacterBody3D
 ## gravity, smooth acceleration, stepping up curbs, pushback from cars,
 ## knock-down (thrown, lies on the ground, gets up) and out-of-world respawn.
 
+signal knocked(impulse: Vector3)        # hit by a car (the player turns this into damage)
+signal shot_by(damage: float, from_player: bool)
+
 const CharacterScript := preload("res://proto3d/character.gd")
 const STEP_HEIGHT := 0.36
 const KNOCK_TIME := 1.4
@@ -13,6 +16,7 @@ var spawn_point := Vector3.ZERO
 var knocked_t := 0.0            # > 0 while down or getting up
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 var _push := Vector3.ZERO
+var hp := 60.0
 
 
 func _setup_walker(outfit: Dictionary) -> void:
@@ -42,10 +46,22 @@ func knockdown(impulse: Vector3) -> void:
 	if knocked_t > GET_UP_TIME:
 		return
 	knocked_t = KNOCK_TIME + GET_UP_TIME
+	knocked.emit(impulse)
 	velocity = impulse + Vector3(0, minf(4.5, impulse.length() * 0.35), 0)
 	if impulse.length() > 0.5:
 		body.rotation.y = atan2(impulse.x, impulse.z)   # face the car: falls on the back
 	body.play("knocked")
+
+
+## Hit by a bullet or a punch. Falls when out of health (and stays down a while).
+func shot(damage: float, from_player: bool, from_pos: Vector3 = Vector3.ZERO) -> void:
+	hp -= damage
+	shot_by.emit(damage, from_player)
+	if hp <= 0.0 and knocked_t <= GET_UP_TIME:
+		var away := global_position - from_pos
+		away.y = 0.0
+		knockdown(away.normalized() * 2.0 if from_pos != Vector3.ZERO else Vector3.ZERO)
+		hp = 60.0
 
 
 ## Slow nudge from a car or another body.
