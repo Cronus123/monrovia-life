@@ -7,6 +7,8 @@
     3. Gameplay smoke test     (tests/smoke_test.gd)
     4. 3D prototype smoke test (tests/smoke_3d.gd)
     5. 1:1 city smoke test     (tests/smoke_city.gd; skipped if the city isn't generated)
+    6. Game systems test       (tests/smoke_game.gd: economy, save, HUD, clock, traffic, cars,
+                                weapons, shops, taxi, missions, police, arrest, hospital)
   and fails (exit code 1) if any step prints a script error, engine error or warning,
   or if the smoke test does not print "SMOKE TEST PASSED".
 
@@ -39,7 +41,7 @@ $outDir = Join-Path $project "tests\output"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 # Lines that count as failures. Godot prints these to stdout/stderr.
-$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED)'
+$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED)'
 
 function Invoke-Step([string]$name, [string[]]$godotArgs, [string]$mustContain = "") {
     $log = Join-Path $outDir ("{0}.log" -f $name)
@@ -72,7 +74,8 @@ $results = @(
     (Invoke-Step "2_boot" @("--headless", "--path", $project, "--quit-after", "300")),
     (Invoke-Step "3_smoke" @("--headless", "--path", $project, "--script", "res://tests/smoke_test.gd") "SMOKE TEST PASSED"),
     (Invoke-Step "4_smoke_3d" @("--headless", "--path", $project, "--script", "res://tests/smoke_3d.gd") "SMOKE3D TEST PASSED"),
-    (Invoke-Step "5_smoke_city" @("--headless", "--path", $project, "--script", "res://tests/smoke_city.gd") "SMOKECITY TEST PASSED")
+    (Invoke-Step "5_smoke_city" @("--headless", "--path", $project, "--script", "res://tests/smoke_city.gd") "SMOKECITY TEST PASSED"),
+    (Invoke-Step "6_smoke_game" @("--headless", "--path", $project, "--script", "res://tests/smoke_game.gd") "SMOKEGAME TEST PASSED")
 )
 
 if ($results -contains $false) {
