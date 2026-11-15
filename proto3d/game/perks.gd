@@ -17,6 +17,7 @@ var state: GameState
 var main
 var data: Dictionary
 var stamina := BASE_STAMINA
+var winded := false           # ran out: no sprinting until a quarter has come back
 var _check_t := 0.0
 
 
@@ -142,6 +143,8 @@ func _process(delta: float) -> void:
 		var sprinting: bool = Input.is_action_pressed("p3_sprint") and spd > 5.0
 		if sprinting:
 			stamina = maxf(0.0, stamina - DRAIN * delta)
+			if stamina <= 0.0:
+				winded = true
 			add_xp("stamina", float(xp["sprint_per_s"]) * delta)
 		else:
 			stamina = minf(max_stamina(), stamina + REGEN * delta)
@@ -158,7 +161,9 @@ func _process(delta: float) -> void:
 
 
 func can_sprint() -> bool:
-	return stamina > 1.0
+	if winded and stamina >= max_stamina() * 0.25:
+		winded = false
+	return not winded and stamina > 0.0
 
 
 # ------------------------------------------------------------------ the B ability
