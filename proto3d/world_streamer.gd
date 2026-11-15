@@ -26,6 +26,9 @@ var _jobs := {}                 # Vector2i -> {"lod": int, "task": int, "result"
 var _ready_queue: Array = []
 var _mats := {}
 var _timer := 0.0
+var _grass_mesh: ArrayMesh
+var _plants: Array = []         # Palm, Tree, Bush meshes (proto3d/city/vegetation.glb)
+var grass_enabled := true      # Settings: off on Low
 
 
 func _ready() -> void:
@@ -45,6 +48,11 @@ func _ready() -> void:
 	paint.vertex_color_is_srgb = true
 	paint.roughness = 0.6
 	_mats["Paint"] = paint
+	var fol := ShaderMaterial.new()
+	fol.shader = preload("res://proto3d/foliage.gdshader")
+	_mats["Foliage"] = fol
+	_grass_mesh = _make_grass_tuft()
+	_load_plants()
 	var glow := StandardMaterial3D.new()
 	glow.albedo_color = Color("#fff4cc")
 	glow.emission_enabled = true
@@ -177,6 +185,9 @@ func _load_tile(job: Dictionary) -> void:
 				shapes.append([m, m.mesh.create_trimesh_shape()])
 			if String(m.name) == "Props":
 				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			elif String(m.name) == "Foliage":
+				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				m.visibility_range_end = detail_range + 120.0
 			elif String(m.name) == "Details":
 				# building clutter (ledges, tanks, AC units, awnings): fades out with distance
 				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -256,7 +267,102 @@ func _free_tile(k: Vector2i) -> void:
 	tiles.erase(k)
 
 
+## Grass tufts on the green spots listed in the tile meta (one MultiMesh per tile).
+func _add_grass(tile: Node3D, meta: Dictionary) -> void:
+	var spots: Array = meta.get("grass", [])
+	if spots.is_empty() or not grass_enabled:
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _grass_mesh
+	mm.instance_count = spots.size() * 3
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(tile.name)
+	var i := 0
+	for s in spots:
+		for k in 3:
+			var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4))
+			mm.set_instance_transform(i, Transform3D(b, Vector3(s[0] + rng.randf_range(-2.0, 2.0), s[1] - 0.05, s[2] + rng.randf_range(-2.0, 2.0))))
+			i += 1
+	var mi := MultiMeshInstance3D.new()
+	mi.name = "Grass"
+	mi.multimesh = mm
+	mi.material_override = _mats["Foliage"]
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visibility_range_end = 75.0
+	mi.visibility_range_end_margin = 15.0
+	mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	tile.add_child(mi)
+
+
+## One grass tuft: 3 crossed blades-cards, tips sway (vertex alpha).
+func _make_grass_tuft() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 3:
+		var a := k * PI / 3.0
+		var d := Vector3(cos(a), 0, sin(a)) * 0.35
+		var h := 0.55
+		var base := Color(0.3, 0.45, 0.16, 0.0)
+		var tip := Color(0.55, 0.62, 0.25, 1.0)
+		var v := [[-d, base], [d, base], [d * 0.6 + Vector3(0, h, 0), tip], [-d * 0.6 + Vector3(0, h, 0), tip]]
+		for idx in [0, 1, 2, 0, 2, 3]:
+			st.set_color(v[idx][1])
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v[idx][0])
+	return st.commit()
+
+
+func _load_plants() -> void:
+	var bytes := FileAccess.get_file_as_bytes(CITY_DIR + "vegetation.glb")
+	if bytes.is_empty():
+		return
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	if doc.append_from_buffer(bytes, "", state) != OK:
+		return
+	var scene := doc.generate_scene(state)
+	for n in ["Palm", "Tree", "Bush"]:
+		var mi := scene.find_child(n, true, false) as MeshInstance3D
+		var mesh: Mesh = mi.mesh if mi != null else null
+		if mesh != null:
+			for i in mesh.get_surface_count():
+				var mat := mesh.surface_get_material(i)
+				var nm: String = mat.resource_name if mat != null else ""
+				if _mats.has(nm):
+					mesh.surface_set_material(i, _mats[nm])
+		_plants.append(mesh)
+	scene.free()
+
+
+## Palms, trees and bushes: one MultiMesh per kind per tile, at the spots in the tile meta.
+func _add_plants(tile: Node3D, meta: Dictionary) -> void:
+	var by_kind := [[], [], []]
+	for t in meta.get("trees", []):
+		by_kind[int(t[3])].append(t)
+	for k in 3:
+		if by_kind[k].is_empty() or k >= _plants.size() or _plants[k] == null:
+			continue
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _plants[k]
+		mm.instance_count = by_kind[k].size()
+		for i in by_kind[k].size():
+			var t: Array = by_kind[k][i]
+			var r: float = t[4]
+			var b := Basis(Vector3.UP, r * TAU * 7.0).scaled(Vector3.ONE * (0.75 + r * 0.55))
+			mm.set_instance_transform(i, Transform3D(b, Vector3(t[0], t[1], t[2])))
+		var mi := MultiMeshInstance3D.new()
+		mi.name = ["Palms", "Trees", "Bushes"][k]
+		mi.multimesh = mm
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		mi.visibility_range_end = 120.0 if k == 2 else 520.0
+		tile.add_child(mi)
+
+
 func _add_signs(tile: Node3D, meta: Dictionary) -> void:
+	_add_grass(tile, meta)
+	_add_plants(tile, meta)
 	# shop names on the signboards over shopfronts (made-up businesses)
 	for s in meta.get("shops", []):
 		var lab := Label3D.new()

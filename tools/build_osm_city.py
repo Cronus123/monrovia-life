@@ -256,7 +256,8 @@ def write_glb(path, nodes):
             accessors.append({"bufferView": add_view(Nrm.astype(np.float32), 34962), "componentType": 5126,
                               "count": len(P), "type": "VEC3"})
             an = len(accessors) - 1
-            accessors.append({"bufferView": add_view(C, 34962), "componentType": 5126, "count": len(P), "type": "VEC3"})
+            accessors.append({"bufferView": add_view(C, 34962), "componentType": 5126, "count": len(P),
+                              "type": "VEC4" if C.shape[1] == 4 else "VEC3"})
             ac = len(accessors) - 1
             accessors.append({"bufferView": add_view(I, 34963), "componentType": 5125, "count": len(I), "type": "SCALAR"})
             ai = len(accessors) - 1
@@ -632,9 +633,10 @@ def main():
     t_start = time.time()
     city = City()
     hi = defaultdict(lambda: {"Terrain-col": Mesh(), "Roads-col": Mesh(), "Sidewalks-col": Mesh(),
-                              "Buildings-col": Mesh(), "Props": Mesh(), "Details": Mesh()})
+                              "Buildings-col": Mesh(), "Props": Mesh(), "Details": Mesh(),
+                              "Foliage": Mesh()})
     lo = defaultdict(lambda: {"Lo": Mesh()})
-    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": [], "lamps": [], "shops": []})
+    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": [], "lamps": [], "shops": [], "grass": [], "trees": []})
     graph_ways = []      # for the traffic road graph
     building_rings = []  # for the minimap
     UP = (0, 1, 0)
@@ -712,6 +714,17 @@ def main():
             c, d = P(*right[i + 1], ys[i + 1]), P(*left[i + 1], ys[i + 1])
             hi[tk]["Roads-col"].quad("Road", a, b, c, d, col, UP)
             lo[tk]["Lo"].quad("LoVC", a, b, c, d, col, UP)
+            if not unpaved and not bridge and kind not in ("track", "service") and w >= 5.0:
+                # concrete gutter channels along both edges
+                for s0, s1 in ((left, 1), (right, -1)):
+                    e0, e1 = s0[i], s0[i + 1]
+                    ix, iy = pts[i][0] - e0[0], pts[i][1] - e0[1]
+                    k0 = 0.45 / (math.hypot(ix, iy) or 1.0)
+                    jx, jy = pts[i + 1][0] - e1[0], pts[i + 1][1] - e1[1]
+                    k1 = 0.45 / (math.hypot(jx, jy) or 1.0)
+                    hi[tk]["Roads-col"].quad("Paint", P(*e0, ys[i] + 0.012), P(e0[0] + ix * k0, e0[1] + iy * k0, ys[i] + 0.012),
+                                             P(e1[0] + jx * k1, e1[1] + jy * k1, ys[i + 1] + 0.012), P(*e1, ys[i + 1] + 0.012),
+                                             (0.36, 0.35, 0.33), UP)
             seg = math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
             dash += seg
             if kind in MAJOR and not unpaved and (dash % 9.0) < 4.5:
@@ -772,7 +785,7 @@ def main():
                             _lamp(hi[tk]["Props"], x, y, e[3] + 0.15, -e[4], -e[5])
                             meta[tk]["lamps"].append([round(x - e[4] * 1.6, 2), round(e[3] + 6.6, 2), round(-(y - e[5] * 1.6), 2)])
                         if kind in ("trunk", "primary", "secondary") and k % 7 == 2 and hsh(x, y) < 0.5:
-                            _palm(hi[tk]["Props"], x, y, e[3] + 0.15, hsh(x, y, 3))
+                            meta[tk]["trees"].append([round(x, 2), round(e[3] + 0.15, 2), round(-y, 2), 0, round(hsh(x, y, 3), 2)])
                         if kind in ("residential", "unclassified", "tertiary") and k % 5 == 2 and hsh(x, y, 9) < 0.18:
                             px, py = e[0][0] - e[4] * 1.3, e[0][1] - e[5] * 1.3
                             heading = math.atan2(-e[5], -e[4]) if side > 0 else math.atan2(e[5], e[4])
@@ -884,6 +897,53 @@ def main():
         count += 1
     print("buildings:", count, "(%.0f s)" % (time.time() - t_start))
 
+    # ---------------- vegetation: palms, trees and bushes on green land, grass tuft spots
+    bmask = np.zeros_like(road_mask)
+    for ring in building_rings:
+        fill_polygon(bmask, ring, True, city.xmin, city.ymin, RM)
+    nveg = [0, 0, 0]
+    STEP = 5.0
+    for yy in np.arange(city.ymin + 2, city.ymax - 2, STEP):
+        for xx in np.arange(city.xmin + 2, city.xmax - 2, STEP):
+            jx = float(xx + (hsh(int(xx), int(yy), 21) - 0.5) * STEP)
+            jy = float(yy + (hsh(int(xx), int(yy), 22) - 0.5) * STEP)
+            if city.is_water(jx, jy):
+                continue
+            rr, cc = int((jy - city.ymin) / RM), int((jx - city.xmin) / RM)
+            if not (1 <= rr < bmask.shape[0] - 1 and 1 <= cc < bmask.shape[1] - 1):
+                continue
+            if bmask[rr - 1:rr + 2, cc - 1:cc + 2].any() or road_mask[rr - 1:rr + 2, cc - 1:cc + 2].any():
+                continue
+            r_, c_ = city.cell(jx, jy)
+            code = int(city.cover[r_, c_])
+            green = code in (1, 2, 3, 4) or (code == 0 and not (DOWNTOWN[0] < jx < DOWNTOWN[1] and DOWNTOWN[2] < jy < DOWNTOWN[3])
+                                                and hsh(int(jx / 24), int(jy / 24)) >= 0.7)
+            if not green:
+                continue
+            tk = tile_of(jx, jy)
+            h = city.hm(jx, jy)
+            u = hsh(int(jx * 7), int(jy * 7), 23)
+            dense = code in (3, 4)
+            if u < (0.05 if dense else 0.012):
+                kind_ = 1 if dense and u < 0.03 else 0
+                meta[tk]["trees"].append([round(jx, 2), round(h, 2), round(-jy, 2), kind_, round(hsh(int(jx), int(jy), 24), 2)])
+                nveg[0] += 1
+            elif u < (0.16 if dense else 0.05):
+                meta[tk]["trees"].append([round(jx, 2), round(h, 2), round(-jy, 2), 2, round(hsh(int(jx), int(jy), 25), 2)])
+                nveg[1] += 1
+            if len(meta[tk]["grass"]) < 900 and u > 0.35:
+                meta[tk]["grass"].append([round(jx, 1), round(h, 2), round(-jy, 1)])
+                nveg[2] += 1
+    print("vegetation: %d trees, %d bushes, %d grass spots" % tuple(nveg))
+    # the plant models themselves, instanced by the game at the positions in the tile meta
+    veg = []
+    for name, fn in (("Palm", lambda m, f: _palm(m, f, 0.0, 0.0, 0.0, 0.5)),
+                     ("Tree", lambda m, f: _tree(m, f, 0.0, 0.0, 0.0, 0.5)),
+                     ("Bush", lambda m, f: _bush(f, 0.0, 0.0, 0.0, 0.5))):
+        mm = Mesh()
+        fn(mm, mm)
+        veg.append((name, mm))
+
     # ---------------- terrain tiles
     tiles = set(hi.keys()) | set(lo.keys())
     i0, j0 = tile_of(city.xmin, city.ymin)
@@ -913,6 +973,9 @@ def main():
         os.makedirs(os.path.join(OUT, sub), exist_ok=True)
         for f in os.listdir(os.path.join(OUT, sub)):
             os.remove(os.path.join(OUT, sub, f))
+    write_glb(os.path.join(OUT, "vegetation.glb"), veg)
+    with open(os.path.join(OUT, "vegetation.glb.import"), "w") as f:
+        f.write('[remap]\n\nimporter="keep"\n')
     manifest_tiles = []
     total = 0
     for (i, j) in sorted(tiles):
@@ -1088,17 +1151,102 @@ def _lamp(m, x, y, h, dx, dy):
     _box(m, "Glow", ex - 0.25, ey - 0.25, ex + 0.25, ey + 0.25, h + 6.65, h + 6.85, (1.0, 0.95, 0.8))
 
 
-def _palm(m, x, y, h, r):
-    ht = 6.5 + r * 2.5
-    _box(m, "Props", x - 0.14, y - 0.14, x + 0.14, y + 0.14, h, h + ht, COL["trunk_wood"])
-    for k in range(7):
-        a = k * math.tau / 7 + r * 3
-        ex, ey = x + math.cos(a) * 3.0, y + math.sin(a) * 3.0
-        nx_, ny_ = -math.sin(a) * 0.35, math.cos(a) * 0.35
-        m.quad("Props", P(x + nx_ * 0.3, y + ny_ * 0.3, h + ht), P(x - nx_ * 0.3, y - ny_ * 0.3, h + ht),
-               P(ex - nx_, ey - ny_, h + ht - 1.2), P(ex + nx_, ey + ny_, h + ht - 1.2), COL["leaf"])
-        m.quad("Props", P(x - nx_ * 0.3, y - ny_ * 0.3, h + ht), P(x + nx_ * 0.3, y + ny_ * 0.3, h + ht),
-               P(ex + nx_, ey + ny_, h + ht - 1.2), P(ex - nx_, ey - ny_, h + ht - 1.2), COL["leaf"])
+LEAF = (0.22, 0.47, 0.16)
+
+
+def _frond(f, x, y, z, a, length, droop, col):
+    """Arched palm frond: 4 segments, double sided. Vertex alpha = wind sway weight
+    (0 at the crown, 1 at the tip)."""
+    ca, sa = math.cos(a), math.sin(a)
+    px, py = -sa, ca
+    pts = []
+    for k in range(5):
+        t = k / 4
+        d = length * t
+        zz = z + d * 0.45 - droop * t * t * length
+        w = 0.15 + 0.55 * math.sin(t * math.pi) if k < 4 else 0.02
+        pts.append((x + ca * d, y + sa * d, zz, w, 0.2 + 0.8 * t))
+    for k in range(4):
+        (ax, ay, az, aw, ak), (bx, by, bz, bw, bk) = pts[k], pts[k + 1]
+        qa = (P(ax + px * aw, ay + py * aw, az - aw * 0.25), col + (ak,))
+        qb = (P(ax - px * aw, ay - py * aw, az - aw * 0.25), col + (ak,))
+        qc = (P(bx - px * bw, by - py * bw, bz - bw * 0.25), col + (bk,))
+        qd = (P(bx + px * bw, by + py * bw, bz - bw * 0.25), col + (bk,))
+        for up in ((0, 1, 0), (0, -1, 0)):
+            _vtri(f, "Foliage", qa, qb, qc, up)
+            _vtri(f, "Foliage", qa, qc, qd, up)
+
+
+def _vtri(m, mat, a, b, c, up):
+    """Triangle with per-vertex colours: a, b, c = (position, colour)."""
+    n = np.cross(np.subtract(b[0], a[0]), np.subtract(c[0], a[0]))
+    if np.dot(n, up) < 0:
+        b, c = c, b
+    p, cl, ix = m.parts[mat]
+    base = len(p)
+    for v in (a, b, c):
+        p.append(v[0])
+        cl.append(v[1])
+    ix.extend((base, base + 1, base + 2))
+
+
+def _palm(m, f, x, y, h, r):
+    """Coconut palm: slightly leaning tapered trunk, crown of arched fronds, coconuts."""
+    ht = 6.5 + r * 3.5
+    lean_a = r * 40.0
+    lx, ly = math.cos(lean_a) * ht * 0.08, math.sin(lean_a) * ht * 0.08
+    sides = 6
+    prev = None
+    for k in range(5):
+        t = k / 4
+        cx, cy, cz = x + lx * t * t, y + ly * t * t, h + ht * t
+        rad = 0.2 - 0.07 * t
+        ring = [(cx + rad * math.cos(i * math.tau / sides), cy + rad * math.sin(i * math.tau / sides), cz) for i in range(sides)]
+        if prev:
+            for i in range(sides):
+                a0, a1 = prev[i], prev[(i + 1) % sides]
+                b0, b1 = ring[i], ring[(i + 1) % sides]
+                mx, my = (a0[0] + a1[0]) / 2 - cx, (a0[1] + a1[1]) / 2 - cy
+                m.quad("Props", P(*a0), P(*a1), P(*b1), P(*b0), _shade(COL["trunk_wood"], 0.9 + 0.2 * (k % 2)), (mx, 0, -my))
+        prev = ring
+    tx, ty, tz = x + lx, y + ly, h + ht
+    _box(m, "Props", tx - 0.2, ty - 0.2, tx + 0.2, ty + 0.2, tz - 0.6, tz - 0.15, (0.3, 0.42, 0.12))     # coconuts
+    n = 9
+    for k in range(n):
+        a = k * math.tau / n + r * 3.0
+        col = _shade(LEAF, 0.85 + 0.3 * hsh(int(r * 1000), k))
+        _frond(f, tx, ty, tz, a, 3.2 + r * 0.8, 0.9 + 0.3 * hsh(int(r * 997), k), col)
+    for k in range(3):        # young upright fronds
+        _frond(f, tx, ty, tz, k * 2.1 + r, 1.8, 0.1, _shade(LEAF, 1.15))
+
+
+def _tree(m, f, x, y, h, r):
+    """Broadleaf tree (mango / cotton tree style): trunk and a few clumped canopy blobs."""
+    ht = 4.0 + r * 4.0
+    _box(m, "Props", x - 0.22, y - 0.22, x + 0.22, y + 0.22, h, h + ht, COL["trunk_wood"])
+    for k in range(4):
+        a = k * 1.9 + r * 5
+        d = 0 if k == 0 else 1.6
+        _bush(f, x + math.cos(a) * d, y + math.sin(a) * d, h + ht - 0.6 + (k % 2) * 0.8, min(0.99, r + k * 0.1), 2.0 + r * 1.2)
+
+
+def _bush(f, x, y, h, r, size=None):
+    """Low-poly leafy clump (jittered double cone), sways a little."""
+    s = size or (0.6 + r * 0.7)
+    col = _shade((0.2, 0.42, 0.15), 0.85 + 0.3 * r)
+    k = 8
+    top = (x, y, h + s * 1.3)
+    bot = (x, y, h + s * 0.1)
+    ring = []
+    for i in range(k):
+        a = i * math.tau / k + r
+        rr = s * (0.85 + 0.3 * hsh(int(r * 1000), i))
+        ring.append((x + math.cos(a) * rr, y + math.sin(a) * rr, h + s * (0.55 + 0.2 * hsh(int(r * 999), i))))
+    for i in range(k):
+        a, b = ring[i], ring[(i + 1) % k]
+        mx, my = (a[0] + b[0]) / 2 - x, (a[1] + b[1]) / 2 - y
+        f.tri("Foliage", P(*a), P(*b), P(*top), col + (0.6,), (mx, 1, -my))
+        f.tri("Foliage", P(*a), P(*b), P(*bot), _shade(col, 0.7) + (0.15,), (mx, -0.3, -my))
 
 
 # ------------------------------------------------------------------ building detail

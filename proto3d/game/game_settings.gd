@@ -94,6 +94,7 @@ func apply_world(main) -> void:
 			main.streamer.hi_radius = 360.0
 			main.streamer.lo_radius = 900.0
 			main.streamer.detail_range = 140.0
+			main.streamer.grass_enabled = false
 			main.traffic.max_cars = 10
 		1:
 			sun.shadow_enabled = true
@@ -102,6 +103,7 @@ func apply_world(main) -> void:
 			main.streamer.hi_radius = 420.0
 			main.streamer.lo_radius = 1300.0
 			main.streamer.detail_range = 220.0
+			main.streamer.grass_enabled = true
 			main.traffic.max_cars = 16
 		2:
 			sun.shadow_enabled = true
@@ -110,6 +112,7 @@ func apply_world(main) -> void:
 			main.streamer.hi_radius = 480.0
 			main.streamer.lo_radius = 1700.0
 			main.streamer.detail_range = 320.0
+			main.streamer.grass_enabled = true
 			main.traffic.max_cars = 20
 	# Forward+ screen-space effects (the Compatibility renderer ignores these)
 	var med := fplus and quality >= 1

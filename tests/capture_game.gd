@@ -29,6 +29,7 @@ func _process(d: float) -> bool:
 
 
 func shot(n: String) -> void:
+	printerr("shot ", n, " ", Time.get_ticks_msec())
 	root.get_viewport().get_texture().get_image().save_png(ProjectSettings.globalize_path(OUT + "/game_" + n + ".png"))
 	print("saved ", n)
 
@@ -50,7 +51,9 @@ func measure(n: String, t: float) -> void:
 
 
 func run() -> void:
+	printerr("waiting ready")
 	await until(func(): return m.ready_done, 60.0)
+	printerr("ready ", Time.get_ticks_msec())
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	await seconds(3.0)
 	# on foot, HUD

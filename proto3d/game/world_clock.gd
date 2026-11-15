@@ -11,7 +11,10 @@ const LAMP_LIGHTS := 10
 var state: GameState
 var sun: DirectionalLight3D
 var env: Environment
-var sky: ProceduralSkyMaterial
+var sky: ShaderMaterial
+var water: ShaderMaterial          # ocean surface (choppier in rain)
+var wet := 0.0                      # how wet the streets are: rises in rain, dries slowly
+var _cloud_t := 0.0
 var streamer                         # world_streamer.gd (lamp positions, glow material)
 var focus := Vector3.ZERO
 var paused := false
@@ -26,7 +29,7 @@ func setup(game_state: GameState, sun_light: DirectionalLight3D, environment: En
 	state = game_state
 	sun = sun_light
 	env = environment
-	sky = env.sky.sky_material as ProceduralSkyMaterial
+	sky = env.sky.sky_material as ShaderMaterial
 	streamer = world_streamer
 	for i in LAMP_LIGHTS:
 		var l := OmniLight3D.new()
@@ -99,6 +102,9 @@ func _process(delta: float) -> void:
 	if not paused:
 		state.time_min += delta * MINUTES_PER_SECOND
 		_roll_weather()
+	_cloud_t += delta * (1.0 + rain_amount() * 2.0)
+	var ra := rain_amount()
+	wet = move_toward(wet, 1.0, delta * 0.08) if ra > 0.3 else move_toward(wet, 0.0, delta * 0.004)
 	_apply()
 	_lamp_t -= delta
 	if _lamp_t <= 0.0:
@@ -119,15 +125,28 @@ func _apply() -> void:
 	sun.light_color = Color(1.0, 0.94, 0.84).lerp(Color(1.0, 0.65, 0.4), clampf(absf(arc - 0.5) * 2.0 - 0.6, 0.0, 1.0) * 2.0).lerp(Color(0.55, 0.65, 1.0), dk)
 	# the sun stays on (at zero energy at night) so the renderer never switches shader variants
 	# by day the sky lights the scene; at night a soft blue moonlit ambient takes over
-	env.ambient_light_sky_contribution = lerpf(1.0, 0.0, dk)
-	env.ambient_light_color = Color(0.36, 0.42, 0.62)
+	env.ambient_light_sky_contribution = lerpf(0.45, 0.0, dk)
+	env.ambient_light_color = Color("#d9cfc0").lerp(Color(0.36, 0.42, 0.62), dk)
 	env.ambient_light_energy = lerpf(0.55, 0.75, dk) * (1.0 - ra * 0.25)
-	var night_top := Color("#13204a")
-	var night_hor := Color("#34416a")
+	var night_top := Color("#0b1433")
+	var night_hor := Color("#26304f")
 	var rain_top := Color("#6e7a86")
-	sky.sky_top_color = Color("#2f6fb3").lerp(rain_top, ra * 0.8).lerp(night_top, dk)
-	sky.sky_horizon_color = Color("#a9cbe0").lerp(Color("#9aa4ad"), ra * 0.8).lerp(night_hor, dk)
-	sky.ground_horizon_color = sky.sky_horizon_color
+	var sunset := clampf(absf(arc - 0.5) * 2.0 - 0.7, 0.0, 0.3) / 0.3 * (1.0 - dk * 0.6)
+	sky.set_shader_parameter("top_color", Color("#2f6fb3").lerp(rain_top, ra * 0.8).lerp(night_top, dk))
+	sky.set_shader_parameter("horizon_color", Color("#a9cbe0").lerp(Color("#e8a77a"), sunset * 0.6).lerp(Color("#9aa4ad"), ra * 0.8).lerp(night_hor, dk))
+	sky.set_shader_parameter("ground_color", Color("#1d5e86").lerp(Color("#0a1424"), dk))
+	sky.set_shader_parameter("night", dk)
+	sky.set_shader_parameter("rain", ra)
+	sky.set_shader_parameter("sunset", sunset)
+	sky.set_shader_parameter("cloud_time", _cloud_t)
+	if water != null:
+		water.set_shader_parameter("choppy", ra * 0.8)
+	if streamer != null and streamer._mats.has("Foliage"):
+		(streamer._mats["Foliage"] as ShaderMaterial).set_shader_parameter("wind", 0.8 + ra * 1.6)
+	if streamer != null:
+		for n in ["Terrain", "Road", "Sidewalk", "Roof"]:
+			if streamer._mats.has(n):
+				(streamer._mats[n] as ShaderMaterial).set_shader_parameter("wetness", wet)
 	env.fog_light_color = Color("#bcd3e2").lerp(Color("#8d969e"), ra).lerp(Color("#1a2236"), dk)
 	env.fog_density = 0.0006 + ra * 0.004
 	_rain.emitting = ra > 0.05

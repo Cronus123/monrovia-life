@@ -94,6 +94,7 @@ func _ready() -> void:
 		s.process_mode = Node.PROCESS_MODE_PAUSABLE
 		add_child(s)
 	clock.setup(state, _sun, _env, streamer)
+	clock.water = _water.material_override as ShaderMaterial
 	traffic.setup(graph, self, CAR_MODELS)
 	signals.setup(graph, traffic)
 	traffic.signals = signals
@@ -152,13 +153,12 @@ func apply_camera_effects(quality: int) -> void:
 
 
 func _build_environment() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color("#2f6fb3")
-	sky_mat.sky_horizon_color = Color("#a9cbe0")
-	sky_mat.ground_horizon_color = Color("#a9cbe0")
-	sky_mat.ground_bottom_color = Color("#1d5e86")
+	var sky_mat := ShaderMaterial.new()
+	sky_mat.shader = preload("res://proto3d/sky.gdshader")
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
+	sky.radiance_size = Sky.RADIANCE_SIZE_64
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
 	_env = Environment.new()
 	_env.background_mode = Environment.BG_SKY
 	_env.sky = sky
@@ -189,12 +189,12 @@ func _build_environment() -> void:
 	add_child(_sun)
 	_water = MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(6000, 6000)
+	plane.size = Vector2(3000, 3000)
+	plane.subdivide_width = 300          # 10 m: enough for the long swell
+	plane.subdivide_depth = 300
 	_water.mesh = plane
-	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color("#1d6e9e")
-	wm.roughness = 0.08
-	wm.metallic_specular = 0.9
+	var wm := ShaderMaterial.new()
+	wm.shader = preload("res://proto3d/water.gdshader")
 	_water.material_override = wm
 	_water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_water)
