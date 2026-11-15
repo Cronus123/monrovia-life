@@ -9,6 +9,7 @@ config/name="Monrovia Life: Streets"
 config/description="An original top-down open-world crime-action game set in a stylized Monrovia, Liberia."
 run/main_scene="res://main.tscn"
 run/main_scene.proto3d="res://proto3d/main_3d.tscn"
+run/main_scene.city3d="res://proto3d/main_city.tscn"
 config/features=PackedStringArray("4.2")
 
 [display]

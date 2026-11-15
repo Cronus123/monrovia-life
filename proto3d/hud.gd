@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## Minimal prototype HUD: control hints, view name, speed, FPS and a crosshair in first person.
 
-var main                      # main_3d.gd
+var main                      # main_3d.gd / main_city.gd
+var credits := ""             # data attribution shown bottom-left (e.g. OpenStreetMap)
 var _hint: Label
 var _status: Label
 var _cross: Control
@@ -11,6 +12,15 @@ func _ready() -> void:
 	_hint = _label(Vector2(16, 12), 16)
 	_hint.text = "WASD move   Shift sprint   Space jump / handbrake   F car   V camera   Esc mouse"
 	_status = _label(Vector2(16, 40), 18)
+	if credits != "":
+		var c := _label(Vector2.ZERO, 13)
+		c.text = credits
+		c.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+		c.offset_left = 12.0
+		c.offset_top = -30.0
+		c.offset_bottom = -8.0
+		c.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		c.modulate = Color(1, 1, 1, 0.85)
 	_cross = Control.new()
 	_cross.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_cross.mouse_filter = Control.MOUSE_FILTER_IGNORE

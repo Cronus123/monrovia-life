@@ -27,3 +27,12 @@ tests/output/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 1:1 city: raw downloads and generated tiles (re-create with tools/fetch_map_data.ps1
+# and tools/build_osm_city.py)
+data/osm/
+proto3d/city/hi/
+proto3d/city/lo/
+proto3d/city/meta/
+proto3d/city/preview_landcover.png
+proto3d/city/manifest.json
