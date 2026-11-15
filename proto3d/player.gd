@@ -29,6 +29,13 @@ var _was_on_floor := true
 var swimming := false
 var breath := BREATH
 var climbing := false
+var aiming := false                # set by the weapons system (right mouse with a gun)
+var arm_up := false                # gun arm raised (aiming or just fired; set by weapons.gd)
+var _roll_t := 0.0
+var _roll_dir := Vector3.ZERO
+var _aim_blend := 0.0
+const AIM_SPEED := 2.6             # walking while aiming
+const ROLL_TIME := 0.7
 
 
 func _ready() -> void:
@@ -61,7 +68,20 @@ func _physics_process(delta: float) -> void:
 	var cam_yaw: float = rig.look_yaw() if rig != null else 0.0
 	var dir := Basis(Vector3.UP, cam_yaw) * Vector3(input.x, 0, input.y)
 	var speed := SPRINT_SPEED if Input.is_action_pressed("p3_sprint") else WALK_SPEED
+	if aiming:
+		speed = AIM_SPEED
 	if _update_swim(delta, dir):
+		return
+	# Dodge roll: a quick burst along the stick (or forward), can't be interrupted.
+	if _roll_t <= 0.0 and Input.is_action_just_pressed("p3_dodge") and is_on_floor() and not is_down():
+		_roll_t = ROLL_TIME
+		_roll_dir = dir.normalized() if dir.length() > 0.1 else Basis(Vector3.UP, model.rotation.y) * Vector3.FORWARD
+		model.rotation.y = atan2(-_roll_dir.x, -_roll_dir.z)
+		body.play("roll")
+	if _roll_t > 0.0:
+		_roll_t -= delta
+		walk(_roll_dir * 6.5, 40.0, delta)
+		body.set_speed(0.0)
 		return
 	# Jump at a wall: climb it if it's a low ledge.
 	if Input.is_action_just_pressed("p3_jump") and is_on_floor() and not is_down() and _try_climb(dir):
@@ -85,13 +105,17 @@ func _physics_process(delta: float) -> void:
 	# Facing: match the camera in first person, otherwise turn toward movement.
 	var first: bool = rig != null and rig.is_first_person()
 	if not is_down():
-		if first:
-			model.rotation.y = cam_yaw
+		if first or aiming:
+			# aiming: face where the camera looks and strafe (walk sideways / backwards)
+			model.rotation.y = lerp_angle(model.rotation.y, cam_yaw, clampf(delta * 18.0, 0.0, 1.0)) if aiming else cam_yaw
 		elif dir.length() > 0.1:
 			model.rotation.y = lerp_angle(model.rotation.y, atan2(-dir.x, -dir.z), clampf(delta * TURN_SPEED, 0.0, 1.0))
 	# Hide the body once the first-person blend has mostly finished.
 	model.visible = not (first and rig._blend_t > 0.6)
 	body.set_speed(Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0)
+	# the gun arm comes up when aiming (and a little while after a shot)
+	_aim_blend = move_toward(_aim_blend, 1.0 if arm_up else 0.0, delta * 8.0)
+	body.set_aim(_aim_blend)
 
 
 ## In deep water: float with the head out, swim slowly, use up breath. Returns true while

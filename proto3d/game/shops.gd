@@ -155,8 +155,10 @@ func _can(it: Dictionary) -> bool:
 	match it["action"]:
 		"pistol":
 			return not state.has_pistol
+		"weapon":
+			return not state.owned[int(it["weapon"])]
 		"ammo":
-			return state.has_pistol
+			return state.owned[int(it.get("weapon", GameState.PISTOL))]
 		"armor":
 			return state.armor < 100.0
 	return true
@@ -168,9 +170,12 @@ func _buy(it: Dictionary, q: Dictionary) -> void:
 	match String(it["action"]):
 		"pistol":
 			state.give_pistol(int(it["rounds"]))
-			state.say("Pistol bought. Q switches weapons.")
+			state.say("Pistol bought. Hold Tab for the weapon wheel, right mouse to aim.")
+		"weapon":
+			state.give_weapon(int(it["weapon"]), int(it.get("rounds", 0)))
+			state.say(String(it["label"]) + " bought. Hold Tab for the weapon wheel.")
 		"ammo":
-			state.add_ammo(int(it["rounds"]))
+			state.add_ammo(int(it["rounds"]), int(it.get("weapon", GameState.PISTOL)))
 			state.say("Ammo bought.")
 		"armor":
 			state.set_armor(100.0)

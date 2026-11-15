@@ -14,14 +14,32 @@ signal player_down                       # health reached zero
 
 const FISTS := 0
 const PISTOL := 1
+const BAT := 2
+const MACHETE := 3
+const SMG := 4
+const SHOTGUN := 5
+const WEAPON_COUNT := 6
+const GUNS := [PISTOL, SMG, SHOTGUN]
+const MAGS := [0, 12, 0, 0, 30, 6]          # magazine sizes (also in data/weapons.json)
 const MAX_STARS := 5
 
 var money := 300
 var health := 100.0
 var armor := 0.0
-var has_pistol := false
-var ammo := 0
+var owned: Array = [true, false, false, false, false, false]
+var clip: Array = [0, 0, 0, 0, 0, 0]        # rounds in the magazine, per weapon
+var reserve: Array = [0, 0, 0, 0, 0, 0]     # spare rounds, per weapon
 var weapon := FISTS
+## (older code and saves talk about "the pistol" and "ammo": kept as views on the above)
+var has_pistol: bool:
+	get:
+		return owned[PISTOL]
+	set(v):
+		owned[PISTOL] = v
+## Rounds for the weapon in hand (magazine + spare).
+var ammo: int:
+	get:
+		return clip[weapon] + reserve[weapon] if is_gun(weapon) else 0
 var stars := 0
 var mission_idx := 0
 var time_min := 9.0 * 60.0              # game minutes since day 1, 00:00
@@ -113,37 +131,70 @@ func set_armor(a: float) -> void:
 
 
 # ------------------------------------------------------------------ weapons
+static func is_gun(w: int) -> bool:
+	return w in GUNS
+
+
+## Gives a weapon (and rounds for a gun) and puts it in your hands.
+func give_weapon(w: int, rounds: int = 0) -> void:
+	owned[w] = true
+	if is_gun(w):
+		reserve[w] += rounds
+		_top_up(w)
+	weapon = w
+	weapon_changed.emit(weapon, ammo)
+
+
 func give_pistol(rounds: int) -> void:
-	has_pistol = true
-	ammo += rounds
-	weapon = PISTOL
+	give_weapon(PISTOL, rounds)
+
+
+## Spare rounds for a gun (the one in hand by default).
+func add_ammo(rounds: int, w: int = -1) -> void:
+	if w < 0:
+		w = weapon if is_gun(weapon) else PISTOL
+	reserve[w] += rounds
+	if clip[w] == 0:
+		_top_up(w)
 	weapon_changed.emit(weapon, ammo)
 
 
-func add_ammo(rounds: int) -> void:
-	ammo += rounds
-	weapon_changed.emit(weapon, ammo)
+func _top_up(w: int) -> void:
+	var take: int = mini(int(MAGS[w]) - int(clip[w]), int(reserve[w]))
+	clip[w] += take
+	reserve[w] -= take
 
 
 func select_weapon(w: int) -> bool:
-	if w == PISTOL and not has_pistol:
+	if w < 0 or w >= WEAPON_COUNT or not owned[w]:
 		return false
 	weapon = w
 	weapon_changed.emit(weapon, ammo)
 	return true
 
 
+## One round out of the magazine. False when the magazine is empty (reload, or out).
 func use_ammo() -> bool:
-	if ammo <= 0:
+	if not is_gun(weapon) or clip[weapon] <= 0:
 		return false
-	ammo -= 1
+	clip[weapon] -= 1
 	weapon_changed.emit(weapon, ammo)
 	return true
 
 
+func can_reload() -> bool:
+	return is_gun(weapon) and clip[weapon] < int(MAGS[weapon]) and reserve[weapon] > 0
+
+
+func reload() -> void:
+	_top_up(weapon)
+	weapon_changed.emit(weapon, ammo)
+
+
 func lose_weapons() -> void:
-	has_pistol = false
-	ammo = 0
+	owned = [true, false, false, false, false, false]
+	clip = [0, 0, 0, 0, 0, 0]
+	reserve = [0, 0, 0, 0, 0, 0]
 	weapon = FISTS
 	weapon_changed.emit(weapon, ammo)
 
@@ -158,7 +209,7 @@ func set_stars(n: int) -> void:
 
 # ------------------------------------------------------------------ save data
 func to_dict() -> Dictionary:
-	return {"money": money, "health": health, "armor": armor, "has_pistol": has_pistol, "ammo": ammo,
+	return {"money": money, "health": health, "armor": armor, "owned": owned, "clip": clip, "reserve": reserve,
 		"weapon": weapon, "mission_idx": mission_idx, "time_min": time_min,
 		"bt_stage": bt_stage, "bt_done": bt_done, "bt_posters": bt_posters, "bt_crossed": bt_crossed, "bt_ending": bt_ending}
 
@@ -167,9 +218,20 @@ func from_dict(d: Dictionary) -> void:
 	money = int(d.get("money", 300))
 	health = float(d.get("health", 100.0))
 	armor = float(d.get("armor", 0.0))
-	has_pistol = bool(d.get("has_pistol", false))
-	ammo = int(d.get("ammo", 0))
-	weapon = int(d.get("weapon", FISTS)) if has_pistol else FISTS
+	lose_weapons()
+	if d.has("owned"):
+		for i in mini(WEAPON_COUNT, (d["owned"] as Array).size()):
+			owned[i] = bool(d["owned"][i])
+			clip[i] = int(d["clip"][i])
+			reserve[i] = int(d["reserve"][i])
+	elif bool(d.get("has_pistol", false)):        # saves from before the weapon update
+		owned[PISTOL] = true
+		reserve[PISTOL] = int(d.get("ammo", 0))
+		_top_up(PISTOL)
+	owned[FISTS] = true
+	weapon = int(d.get("weapon", FISTS))
+	if weapon < 0 or weapon >= WEAPON_COUNT or not owned[weapon]:
+		weapon = FISTS
 	mission_idx = int(d.get("mission_idx", 0))
 	time_min = float(d.get("time_min", 540.0))
 	bt_stage = int(d.get("bt_stage", 0))

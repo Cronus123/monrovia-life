@@ -12,6 +12,8 @@
     7. Physics test            (tests/smoke_physics.gd: vehicle tuning, tyres, crash damage,
                                 props, ragdolls, climbing, swimming)
     8. Big Talk storyline      (tests/smoke_bigtalk.gd: his five stages, jobs, grudges, endings, save)
+    9. Weapons                 (tests/smoke_weapons.gd: wheel, magazines, reloads, auto fire, pellets,
+                                melee and combos, shop, saves)
   and fails (exit code 1) if any step prints a script error, engine error or warning,
   or if the smoke test does not print "SMOKE TEST PASSED".
 
@@ -44,7 +46,7 @@ $outDir = Join-Path $project "tests\output"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 # Lines that count as failures. Godot prints these to stdout/stderr.
-$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED)'
+$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED|SMOKEWPN CHECK FAILED|SMOKEWPN TEST FAILED)'
 
 function Invoke-Step([string]$name, [string[]]$godotArgs, [string]$mustContain = "") {
     $log = Join-Path $outDir ("{0}.log" -f $name)
@@ -80,7 +82,8 @@ $results = @(
     (Invoke-Step "5_smoke_city" @("--headless", "--path", $project, "--script", "res://tests/smoke_city.gd") "SMOKECITY TEST PASSED"),
     (Invoke-Step "6_smoke_game" @("--headless", "--path", $project, "--script", "res://tests/smoke_game.gd") "SMOKEGAME TEST PASSED"),
     (Invoke-Step "7_smoke_physics" @("--headless", "--path", $project, "--script", "res://tests/smoke_physics.gd") "SMOKEPHYS TEST PASSED"),
-    (Invoke-Step "8_smoke_bigtalk" @("--headless", "--path", $project, "--script", "res://tests/smoke_bigtalk.gd") "SMOKEBT TEST PASSED")
+    (Invoke-Step "8_smoke_bigtalk" @("--headless", "--path", $project, "--script", "res://tests/smoke_bigtalk.gd") "SMOKEBT TEST PASSED"),
+    (Invoke-Step "9_smoke_weapons" @("--headless", "--path", $project, "--script", "res://tests/smoke_weapons.gd") "SMOKEWPN TEST PASSED")
 )
 
 if ($results -contains $false) {

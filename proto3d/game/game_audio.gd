@@ -18,7 +18,8 @@ const STATIONS := [["radio_highlife", "Highlife 98.1"], ["radio_hipco", "Hipco B
 const ALL := ["engine_car", "engine_keke", "engine_truck", "horn_car", "horn_keke", "siren", "skid", "crash",
 	"explosion", "gunshot", "punch", "step_hard_1", "step_hard_2", "step_soft_1", "step_soft_2", "door", "cash",
 	"ui_click", "ui_confirm", "amb_city_day", "amb_city_night", "amb_market", "amb_waves", "amb_rain",
-	"music_menu", "radio_highlife", "radio_hipco", "radio_palmwine", "radio_bigtalk", "bigtalk_shout"]
+	"music_menu", "radio_highlife", "radio_hipco", "radio_palmwine", "radio_bigtalk", "bigtalk_shout",
+	"smg_shot", "shotgun_shot", "reload", "swing", "melee_hit", "shell"]
 const LOOPS := ["engine_car", "engine_keke", "engine_truck", "siren", "skid", "amb_city_day", "amb_city_night",
 	"amb_market", "amb_waves", "amb_rain", "music_menu", "radio_highlife", "radio_hipco", "radio_palmwine", "radio_bigtalk"]
 

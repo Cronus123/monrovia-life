@@ -4,7 +4,13 @@
   "title": "Weapon shop", "text": "Licensed dealer. Cash only.",
   "items": [
    {"label": "Pistol with 36 rounds", "cost": 1500, "action": "pistol", "rounds": 36},
-   {"label": "36 more rounds", "cost": 300, "action": "ammo", "rounds": 36},
+   {"label": "36 pistol rounds", "cost": 300, "action": "ammo", "rounds": 36},
+   {"label": "SMG with 90 rounds", "cost": 4500, "action": "weapon", "weapon": 4, "rounds": 90},
+   {"label": "90 SMG rounds", "cost": 600, "action": "ammo", "weapon": 4, "rounds": 90},
+   {"label": "Shotgun with 24 shells", "cost": 3500, "action": "weapon", "weapon": 5, "rounds": 24},
+   {"label": "24 shotgun shells", "cost": 400, "action": "ammo", "weapon": 5, "rounds": 24},
+   {"label": "Baseball bat", "cost": 250, "action": "weapon", "weapon": 2},
+   {"label": "Machete", "cost": 400, "action": "weapon", "weapon": 3},
    {"label": "Body armour", "cost": 800, "action": "armor"}
   ]
  },

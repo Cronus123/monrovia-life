@@ -11,6 +11,7 @@ Output: proto3d/audio/*.wav (22.05 kHz, 16-bit mono; Godot compresses them on im
     Music:     music_menu (calm theme), radio_highlife, radio_hipco, radio_palmwine (loops)
     Voice:     radio_bigtalk (the Big Talk Hour: a jingle and a ranting talk-show voice, loop),
                bigtalk_shout (loudspeaker shouting) - wordless, voice-like babble
+    Weapons:   smg_shot, shotgun_shot, reload, swing, melee_hit, shell
 
 Only some:  ... make_audio.py radio_bigtalk bigtalk_shout
 
@@ -469,7 +470,71 @@ def bigtalk_shout(sec=3.2):
     return loudspeaker(babble(sec, 91, pitch=150.0, excited=1.0))
 
 
-NEW = {"radio_bigtalk": (bigtalk_radio, 0.8), "bigtalk_shout": (bigtalk_shout, 0.8)}
+def smg_shot(sec=0.3):
+    """Short, sharp crack (fires fast, so a tight decay)."""
+    n = int(sec * SR)
+    crack = highpass(noise(n), 1500) * env(n, 0.0005, 0.025)
+    body = lowpass(noise(n), 900) * env(n, 0.001, 0.06)
+    thump = np.sin(2 * np.pi * 95 * t_axis(sec)) * env(n, 0.001, 0.05)
+    return crack * 0.8 + body * 1.0 + thump * 0.6
+
+
+def shotgun_shot(sec=1.1):
+    """Big boom with a long rumbling tail."""
+    n = int(sec * SR)
+    blast = lowpass(noise(n), 2500) * env(n, 0.001, 0.12)
+    rumble = lowpass(brown(n), 250) * env(n, 0.005, 0.35)
+    thump = np.sin(2 * np.pi * 60 * t_axis(sec)) * env(n, 0.001, 0.15)
+    return blast * 1.0 + rumble * 1.4 + thump * 0.9
+
+
+def click(f, sec=0.05):
+    n = int(sec * SR)
+    return bandpass(noise(n), f * 0.7, f * 1.4) * env(n, 0.0003, 0.012)
+
+
+def reload_sound(sec=1.2):
+    """Magazine out, magazine in, slide racked."""
+    out = np.zeros(int(sec * SR))
+    place(out, click(1800), 0.05, 0.8)
+    place(out, click(1200, 0.08), 0.12, 0.6)
+    place(out, click(2200), 0.62, 1.0)
+    place(out, click(1500, 0.08), 0.66, 0.7)
+    place(out, click(2600), 0.95, 1.0)
+    place(out, click(1900, 0.1), 1.0, 0.9)
+    return out
+
+
+def swing(sec=0.35):
+    """Whoosh: a noise band sweeping up then down."""
+    n = int(sec * SR)
+    x = noise(n)
+    a = bandpass(x[: n // 2], 300, 1200)
+    b = bandpass(x[n // 2:], 500, 2000)
+    y = np.concatenate([a, b]) * np.sin(np.linspace(0, np.pi, n)) ** 1.5
+    return y
+
+
+def melee_hit(sec=0.3):
+    n = int(sec * SR)
+    thud = lowpass(noise(n), 400) * env(n, 0.001, 0.05)
+    knock = np.sin(2 * np.pi * 140 * t_axis(sec)) * env(n, 0.001, 0.06)
+    return thud * 1.2 + knock
+
+
+def shell(sec=0.4):
+    """Brass casing tinkling on the ground."""
+    out = np.zeros(int(sec * SR))
+    for k, at in enumerate((0.0, 0.11, 0.19, 0.25)):
+        f = 4200 + k * 300
+        n = int(0.08 * SR)
+        place(out, np.sin(2 * np.pi * f * t_axis(0.08)) * env(n, 0.0003, 0.02), at, 0.6 / (k + 1))
+    return out
+
+
+NEW = {"radio_bigtalk": (bigtalk_radio, 0.8), "bigtalk_shout": (bigtalk_shout, 0.8),
+       "smg_shot": (smg_shot, 0.9), "shotgun_shot": (shotgun_shot, 0.95), "reload": (reload_sound, 0.7),
+       "swing": (swing, 0.6), "melee_hit": (melee_hit, 0.9), "shell": (shell, 0.4)}
 
 
 def main():

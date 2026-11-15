@@ -60,6 +60,8 @@ func knockdown(impulse: Vector3) -> void:
 func shot(damage: float, from_player: bool, from_pos: Vector3 = Vector3.ZERO) -> void:
 	hp -= damage
 	shot_by.emit(damage, from_player)
+	if hp > 0.0 and knocked_t <= 0.0:
+		body.play("hit")                     # flinch
 	if hp <= 0.0 and knocked_t <= GET_UP_TIME:
 		var away := global_position - from_pos
 		away.y = 0.0

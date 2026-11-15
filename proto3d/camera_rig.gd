@@ -29,6 +29,8 @@ var sensitivity := 1.0         # from Settings (1 = default)
 var invert_y := false
 var base_fov := 70.0            # from Settings; widens a little at speed
 var motion_blur := true         # off on the Low preset
+var aiming := false             # over-the-shoulder zoom (weapons.gd)
+var _aim_t := 0.0
 var _shake := 0.0               # crash shake strength, decays
 var _blur: ShaderMaterial
 var _blur_rect: ColorRect
@@ -133,8 +135,9 @@ func _process(delta: float) -> void:
 			arm.spring_length = 7.5
 			global_position = target.global_position + Vector3(0, 2.0, 0)
 		else:
-			arm.spring_length = 3.0
-			global_position = target.global_position + Vector3(0, 1.6, 0) + right * 0.55
+			_aim_t = move_toward(_aim_t, 1.0 if aiming else 0.0, delta * 6.0)
+			arm.spring_length = lerpf(3.0, 2.1, _aim_t)
+			global_position = target.global_position + Vector3(0, lerpf(1.6, 1.75, _aim_t), 0) + right * lerpf(0.55, 0.95, _aim_t)
 		arm.global_basis = look_basis
 		goal = arm_end.global_transform
 	if _blend_t < 1.0:
@@ -155,7 +158,7 @@ func _speed_effects(delta: float) -> void:
 	var speed := 0.0
 	if in_vehicle and target is RigidBody3D:
 		speed = (target as RigidBody3D).linear_velocity.length()
-	cam.fov = lerpf(cam.fov, base_fov + clampf((speed - 12.0) * 0.35, 0.0, 12.0), clampf(delta * 3.0, 0.0, 1.0))
+	cam.fov = lerpf(cam.fov, base_fov + clampf((speed - 12.0) * 0.35, 0.0, 12.0) - _aim_t * 14.0, clampf(delta * 6.0, 0.0, 1.0))
 	if _shake > 0.001:
 		var t := Time.get_ticks_msec() * 0.001
 		var a := _shake * _shake

@@ -13,7 +13,10 @@ const PEOPLE_DIR := "res://proto3d/models/people/%s.gltf"
 const MALE_MODELS := ["Casual_Male", "Casual2_Male", "Casual3_Male", "OldClassy_Male"]
 const FEMALE_MODELS := ["Casual_Female", "Casual2_Female", "Casual3_Female"]
 const SCALE := 0.55           # pack models are ~3.2 units tall; people here are ~1.75 m
-const STATES := {"jump": "Jump", "get_in": "SitDown", "knocked": "Death", "punch": "Punch", "shoot": "Shoot_OneHanded"}
+const STATES := {"jump": "Jump", "get_in": "SitDown", "knocked": "Death", "punch": "Punch", "shoot": "Shoot_OneHanded",
+	"swing": "SwordSlash", "hit": "RecieveHit", "roll": "Roll"}
+const AIM_TIME := 0.0            # the frame of Shoot_OneHanded with the arm straight out, level
+const AIM_BONES := ["Torso", "Shoulder.R", "UpperArm.R", "LowerArm.R", "Fist.R"]
 
 # Palette shared with the 2D game.
 const SKIN_TONES := ["#5a3825", "#6b4329", "#4a2e1e", "#7a4e30", "#3d2618"]
@@ -177,7 +180,23 @@ func _build_tree() -> void:
 	move.add_node("blend", blend)
 	move.add_node("scale", AnimationNodeTimeScale.new())
 	move.connect_node("scale", 0, "blend")
-	move.connect_node("output", 0, "scale")
+	# aiming: the right arm (only) holds the raised-gun pose over the walk/run cycle
+	var pose := AnimationNodeAnimation.new()
+	pose.animation = "Shoot_OneHanded"
+	move.add_node("aim_pose", pose)
+	move.add_node("aim_freeze", AnimationNodeTimeScale.new())
+	move.add_node("aim_seek", AnimationNodeTimeSeek.new())
+	move.connect_node("aim_freeze", 0, "aim_pose")
+	move.connect_node("aim_seek", 0, "aim_freeze")
+	var aim := AnimationNodeBlend2.new()
+	aim.filter_enabled = true
+	var base := _bone_track_base()
+	for b in AIM_BONES:
+		aim.set_filter_path(NodePath(base + ":" + b), true)
+	move.add_node("aim", aim)
+	move.connect_node("aim", 0, "scale")
+	move.connect_node("aim", 1, "aim_seek")
+	move.connect_node("output", 0, "aim")
 	sm.add_node("move", move)
 	for s in STATES:
 		var n := AnimationNodeAnimation.new()
@@ -187,14 +206,14 @@ func _build_tree() -> void:
 	up.animation = "Death"
 	up.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
 	sm.add_node("get_up", up)
-	var states := ["move", "jump", "get_in", "knocked", "get_up", "punch", "shoot"]
+	var states := ["move", "jump", "get_in", "knocked", "get_up", "punch", "shoot", "swing", "hit", "roll"]
 	for a in states:
 		for b in states:
 			if a == b:
 				continue
 			var t := AnimationNodeStateMachineTransition.new()
 			t.xfade_time = 0.15 if b != "knocked" else 0.08
-			if b == "move" and a in ["get_up", "punch", "shoot"]:
+			if b == "move" and a in ["get_up", "punch", "shoot", "swing", "hit", "roll"]:
 				t.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
 				t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
 			sm.add_transition(a, b, t)
@@ -208,6 +227,26 @@ func _build_tree() -> void:
 	tree.active = true
 	playback = tree.get("parameters/playback")
 	tree.set("parameters/move/scale/scale", 1.0)
+	tree.set("parameters/move/aim_freeze/scale", 0.0)
+	tree.set("parameters/move/aim/blend_amount", 0.0)
+
+
+## The node path animation tracks use for the skeleton (e.g. "CharacterArmature/Skeleton3D").
+func _bone_track_base() -> String:
+	var a := anim_player.get_animation("Idle")
+	for i in a.get_track_count():
+		var path := String(a.track_get_path(i))
+		if path.contains(":"):
+			return path.get_slice(":", 0)
+	return String(anim_player.get_node(anim_player.root_node).get_path_to(skeleton))
+
+
+## 0 = arms free, 1 = right arm raised to aim (blends over walking / running).
+func set_aim(amount: float) -> void:
+	if tree == null:
+		return
+	tree.set("parameters/move/aim/blend_amount", amount)
+	tree.set("parameters/move/aim_seek/seek_request", AIM_TIME)
 
 
 ## Knocked down: go limp (physics ragdoll) if one is free. Returns false if not (then

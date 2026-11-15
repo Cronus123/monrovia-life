@@ -16,6 +16,7 @@ const RigScript := preload("res://proto3d/camera_rig.gd")
 const StreamerScript := preload("res://proto3d/world_streamer.gd")
 const BigTalkScript := preload("res://proto3d/game/big_talk.gd")
 const VehicleLook := preload("res://proto3d/vehicle_look.gd")
+const WheelScript := preload("res://proto3d/game/weapon_wheel.gd")
 const CAR_MODELS := {
 	"taxi": preload("res://proto3d/models/veh_taxi.glb"), "car": preload("res://proto3d/models/veh_car.glb"),
 	"suv": preload("res://proto3d/models/veh_suv.glb"), "police": preload("res://proto3d/models/veh_police.glb"),
@@ -58,7 +59,8 @@ var taxi := TaxiJob.new()
 var missions := Missions.new()
 var hud := GameHud.new()
 var audio := GameAudio.new()
-var big_talk = BigTalkScript.new()     # Big Talk Dweh, the (fictional) politician's storyline
+var big_talk = BigTalkScript.new()
+var wheel = WheelScript.new()          # weapon wheel + weapon widget     # Big Talk Dweh, the (fictional) politician's storyline
 var signals := TrafficSignals.new()
 var settings := GameSettings.new()
 var settings_menu := SettingsMenu.new()
@@ -117,6 +119,9 @@ func _ready() -> void:
 	audio.process_mode = Node.PROCESS_MODE_ALWAYS
 	audio.setup(self)
 	effects.audio = audio
+	wheel.process_mode = Node.PROCESS_MODE_PAUSABLE
+	hud.add_child(wheel)
+	wheel.setup(self)
 	big_talk.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(big_talk)
 	big_talk.setup(state, self, shops, police)
@@ -734,16 +739,32 @@ func _unhandled_input(event: InputEvent) -> void:
 		audio.horn(car)
 	elif event.is_action_pressed("p3_radio") and car != null:
 		state.say("Radio: " + audio.next_station(), Color("#8ff0ea"), 2.0)
+	elif event.is_action_pressed("p3_reload") and car == null:
+		weapons.start_reload()
 	elif event.is_action_pressed("p3_weapon"):
-		if state.has_pistol:
-			state.select_weapon(GameState.PISTOL if state.weapon == GameState.FISTS else GameState.FISTS)
+		# next weapon you own
+		for k in range(1, GameState.WEAPON_COUNT + 1):
+			if state.select_weapon((state.weapon + k) % GameState.WEAPON_COUNT):
+				break
 	elif event.is_action_pressed("p3_fists"):
 		state.select_weapon(GameState.FISTS)
 	elif event.is_action_pressed("p3_pistol"):
-		if not state.select_weapon(GameState.PISTOL):
-			state.say("You don't have a pistol. Buy one at a weapon shop.")
+		_pick(GameState.PISTOL)
+	elif event.is_action_pressed("p3_slot_3"):
+		_pick(GameState.BAT)
+	elif event.is_action_pressed("p3_slot_4"):
+		_pick(GameState.MACHETE)
+	elif event.is_action_pressed("p3_slot_5"):
+		_pick(GameState.SMG)
+	elif event.is_action_pressed("p3_slot_6"):
+		_pick(GameState.SHOTGUN)
 	elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _pick(w: int) -> void:
+	if not state.select_weapon(w):
+		state.say("You don't have the %s. Buy one at a weapon shop." % String(weapons.defs[w]["name"]).to_lower())
 
 
 func _talk() -> void:

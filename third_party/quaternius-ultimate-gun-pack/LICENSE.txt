@@ -1,0 +1,4 @@
+Ultimate Gun Pack (July 2019) by Quaternius - CC0 1.0 Universal (public domain).
+Source: https://opengameart.org/content/low-poly-guns-pack (uploaded by quaternius, License: CC0)
+also https://quaternius.itch.io/50-lowpoly-guns
+Downloaded 2026-11-15. Used by tools/make_weapons.py to build proto3d/models/weapons/*.glb.

@@ -342,7 +342,7 @@ func _process(delta: float) -> void:
 	_health.get_theme_stylebox("fill").bg_color = Color("#3ccf7a") if state.health > 30.0 else Color("#ff5a6e")
 	_armor.value = state.armor
 	_armor.visible = state.armor > 0.0
-	_weapon.text = ("Pistol   %d" % state.ammo) if state.weapon == GameState.PISTOL else "Fists"
+	_weapon.text = String(main.weapons.defs[state.weapon]["name"]) + (("   %d" % state.ammo) if GameState.is_gun(state.weapon) else "")
 	# minimap: player at the centre
 	if _minimap != null and not _mm.is_empty():
 		var px := (p.x - float(_mm["x0"])) / float(_mm["m_per_px"]) * MAP_ZOOM
@@ -426,10 +426,10 @@ func _draw_stars() -> void:
 func _draw_cross() -> void:
 	if main == null or main.car != null or menu_open or map_open:
 		return
-	if not (main.rig.is_first_person() or state.weapon == GameState.PISTOL):
+	if not (main.rig.is_first_person() or GameState.is_gun(state.weapon)):
 		return
 	var c := _cross.size / 2.0
-	var col := Color(1, 1, 1, 0.9)
+	var col := Color(1, 1, 1, 0.9 if main.weapons.aiming else 0.55)
 	_cross.draw_circle(c, 2.0, col)
 	for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
 		_cross.draw_line(c + d * 6.0, c + d * 13.0, col, 2.0)

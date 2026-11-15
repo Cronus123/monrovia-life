@@ -24,7 +24,10 @@ and is tagged `v0.1-2d` in Git.
 - **Police:** a wanted level of 1 to 5 stars. Cruisers route through the streets to you, officers
   chase you on foot and shoot from 2 stars. Lose them out of sight or at a respray shop. Get caught
   and you're **ARRESTED**; run out of health and you're **DOWN AND OUT**, waking at JFK Medical Center.
-- **Weapons:** fists, a pistol and body armour from the weapon shops.
+- **Weapons:** fists (three-hit combos), baseball bat, machete, pistol, SMG and shotgun, with
+  magazines and reloads (R), aiming over the shoulder (right mouse), recoil, muzzle flash and
+  shell casings; a weapon wheel (hold Tab or LB: slow motion while you choose) and an ammo display.
+  Weapon shops sell all of them, plus body armour. Dodge roll on C.
 - **Missions:** Auntie Musu's 5-mission story, starting at Waterside (yellow M).
 - **Big Talk Dweh:** Honourable Kpakolo "Big Talk" Dweh, an original fictional loudmouth who goes
   from shouting on a crate at Waterside to a radio show, a campaign (convoy, rallies, rice and
@@ -98,11 +101,11 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs eight checks: Godot import, start-up,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs nine checks: Godot import, start-up,
 the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
 shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
-damage, props, ragdolls, climbing, swimming) and the Big Talk storyline. It fails on any error or warning.
+damage, props, ragdolls, climbing, swimming) the Big Talk storyline and the weapons. It fails on any error or warning.
 `tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout
