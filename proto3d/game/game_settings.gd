@@ -138,7 +138,10 @@ func apply_world(main) -> void:
 	sun.shadow_blur = 1.5 if high else 1.0
 	RenderingServer.directional_soft_shadow_filter_set_quality(
 			RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM if high else RenderingServer.SHADOW_QUALITY_SOFT_LOW)
-	RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_MEDIUM if high else RenderingServer.ENV_SSAO_QUALITY_LOW, not high, 0.5, 2, 50.0, 300.0)
+	# half-resolution SSAO/SSIL and a coarser fog volume: what keeps High near 60 on a GTX 760
+	RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_LOW, true, 0.5, 2, 50.0, 300.0)
+	RenderingServer.environment_set_ssil_quality(RenderingServer.ENV_SSIL_QUALITY_LOW, true, 0.5, 4, 50.0, 300.0)
+	RenderingServer.environment_set_volumetric_fog_volume_size(48, 48)
 	main.get_viewport().msaa_3d = Viewport.MSAA_DISABLED
 	main.get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if quality >= 1 else Viewport.SCREEN_SPACE_AA_DISABLED
 	if main.has_method("apply_camera_effects"):

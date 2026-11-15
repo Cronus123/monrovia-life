@@ -14,7 +14,7 @@ var hi_radius := 420.0          # detailed tiles (Settings: graphics quality)
 var lo_radius := 1300.0         # low-detail ring
 var detail_range := 260.0       # building details fade out beyond this (Settings: quality)
 const MAX_JOBS := 3
-const ATTACH_PER_FRAME := 2
+const ATTACH_PER_FRAME := 1
 const SHADER := preload("res://proto3d/city_surfaces.gdshader")
 const PropsScript := preload("res://proto3d/props.gd")
 
@@ -30,6 +30,8 @@ var _timer := 0.0
 var _grass_mesh: ArrayMesh
 var _plants: Array = []         # Palm, Tree, Bush meshes (proto3d/city/vegetation.glb)
 var grass_enabled := true      # Settings: off on Low
+var _prop_queue: Array = []     # [tile instance id, meta chunk]: physics props, a few per frame
+const PROPS_PER_FRAME := 6
 
 
 func _ready() -> void:
@@ -115,6 +117,11 @@ func _process(delta: float) -> void:
 		if _ready_queue.is_empty():
 			break
 		_attach(_ready_queue.pop_front())
+	if not _prop_queue.is_empty():
+		var job: Array = _prop_queue.pop_front()
+		var tile := instance_from_id(job[0]) as Node3D
+		if tile != null and tile.is_inside_tree():
+			PropsScript.spawn(tile, job[1], _mats["Glow"], _mats["Props"])
 	_timer -= delta
 	if _timer > 0.0:
 		return
@@ -161,7 +168,10 @@ func _start_job(k: Vector2i, lod: int) -> void:
 		# (the real renderers are), so tests load tiles on the main thread.
 		_load_tile(job)
 		return
-	job["task"] = WorkerThreadPool.add_task(_load_tile.bind(job), false, "city tile")
+	# High priority on purpose: the Forward+ renderer compiles shader pipelines on the pool's
+	# low-priority threads, and a tile job creating meshes can wait on the renderer - if the
+	# tile jobs filled the low-priority lane, the two would wait on each other forever.
+	job["task"] = WorkerThreadPool.add_task(_load_tile.bind(job), true, "city tile")
 
 
 ## Worker thread: parse the glb, build collision shapes, assign shared materials.
@@ -236,7 +246,7 @@ func _attach(job: Dictionary) -> void:
 	node.name = "Tile_%d_%d_%s" % [k.x, k.y, "hi" if job["lod"] == 2 else "lo"]
 	add_child(node)
 	if job["lod"] == 2:
-		_add_signs(node, res["meta"])
+		_add_signs_later.call_deferred(node.get_instance_id(), res["meta"])   # next frame: spreads the work
 	if tiles.has(k):
 		(tiles[k]["node"] as Node).queue_free()
 	tiles[k] = {"lod": job["lod"], "node": node, "meta": res["meta"]}
@@ -361,10 +371,26 @@ func _add_plants(tile: Node3D, meta: Dictionary) -> void:
 		tile.add_child(mi)
 
 
+func _add_signs_later(id: int, meta: Dictionary) -> void:
+	var tile := instance_from_id(id) as Node3D
+	if tile != null and tile.is_inside_tree():
+		_add_signs(tile, meta)
+
+
 func _add_signs(tile: Node3D, meta: Dictionary) -> void:
 	_add_grass(tile, meta)
 	_add_plants(tile, meta)
-	PropsScript.spawn(tile, meta, _mats["Glow"], _mats["Props"])
+	# street furniture: queued in small batches (creating physics bodies isn't free)
+	var items: Array = []
+	for p in meta.get("poles", []):
+		items.append(["poles", p])
+	for p in meta.get("props", []):
+		items.append(["props", p])
+	for i in range(0, items.size(), PROPS_PER_FRAME):
+		var chunk := {"poles": [], "props": []}
+		for it in items.slice(i, i + PROPS_PER_FRAME):
+			chunk[it[0]].append(it[1])
+		_prop_queue.append([tile.get_instance_id(), chunk])
 	# shop names on the signboards over shopfronts (made-up businesses)
 	for s in meta.get("shops", []):
 		var lab := Label3D.new()
