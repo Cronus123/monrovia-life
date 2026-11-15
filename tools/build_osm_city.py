@@ -71,7 +71,7 @@ COL = {
 LANDMARKS = ["Executive Mansion", "Capitol Building", "Centennial Pavilion", "Temple of Justice",
              "Ducor Intercontinental Hotel", "University of Liberia", "James Spriggs Payne Airport",
              "Antoinette Tubman Stadium", "Waterside Market", "John F. Kennedy",
-             "National Police Headquarters", "Providence Baptist Church", "Mamba Point Hotel",
+             "National Police Headquarters", "Providence Baptist Church",
              "Providence Island", "E. J. Roye", "Masonic Temple", "Ministry of Foreign Affairs",
              "Trinity Cathedral", "Tubman High School"]
 
@@ -994,7 +994,7 @@ def build_graph(graph_ways):
 
 LANDMARK_FOR = {"executive_mansion": "Executive Mansion", "capitol": "Capitol Building", "jfk": "John F. Kennedy",
                 "hospital": "John F. Kennedy", "university": "University of Liberia", "centennial": "Centennial Pavilion",
-                "ducor": "Ducor", "mamba_point_hotel": "Mamba Point Hotel", "tubman_stadium": "Antoinette Tubman Stadium",
+                "ducor": "Ducor", "tubman_stadium": "Antoinette Tubman Stadium",
                 "police_hq": "National Police Headquarters"}
 
 
