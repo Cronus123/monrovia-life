@@ -17,6 +17,8 @@ const StreamerScript := preload("res://proto3d/world_streamer.gd")
 const BigTalkScript := preload("res://proto3d/game/big_talk.gd")
 const VehicleLook := preload("res://proto3d/vehicle_look.gd")
 const WheelScript := preload("res://proto3d/game/weapon_wheel.gd")
+const StreetLifeScript := preload("res://proto3d/game/street_life.gd")
+const PerksScript := preload("res://proto3d/game/perks.gd")
 const CAR_MODELS := {
 	"taxi": preload("res://proto3d/models/veh_taxi.glb"), "car": preload("res://proto3d/models/veh_car.glb"),
 	"suv": preload("res://proto3d/models/veh_suv.glb"), "police": preload("res://proto3d/models/veh_police.glb"),
@@ -60,7 +62,9 @@ var missions := Missions.new()
 var hud := GameHud.new()
 var audio := GameAudio.new()
 var big_talk = BigTalkScript.new()
-var wheel = WheelScript.new()          # weapon wheel + weapon widget     # Big Talk Dweh, the (fictional) politician's storyline
+var wheel = WheelScript.new()          # weapon wheel + weapon widget
+var street_life = StreetLifeScript.new()   # stall sellers, chatting groups, kids' football
+var perks = PerksScript.new()              # skills that grow with use, unlockable perks     # Big Talk Dweh, the (fictional) politician's storyline
 var signals := TrafficSignals.new()
 var settings := GameSettings.new()
 var settings_menu := SettingsMenu.new()
@@ -119,6 +123,14 @@ func _ready() -> void:
 	audio.process_mode = Node.PROCESS_MODE_ALWAYS
 	audio.setup(self)
 	effects.audio = audio
+	perks.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(perks)
+	perks.setup(state, self)
+	missions.mission_passed.connect(func(_i): perks.add_rep("mission"))
+	big_talk.job_passed.connect(func(_id): perks.add_rep("bigtalk_job"))
+	street_life.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(street_life)
+	street_life.setup(self)
 	wheel.process_mode = Node.PROCESS_MODE_PAUSABLE
 	hud.add_child(wheel)
 	wheel.setup(self)
@@ -126,7 +138,10 @@ func _ready() -> void:
 	add_child(big_talk)
 	big_talk.setup(state, self, shops, police)
 	missions.mission_passed.connect(func(_i): big_talk._try_advance())
-	effects.cash_picked.connect(func(n: int): state.add_money(n); state.say("+" + GameState.money_text(n), Color("#f5c518"), 1.5))
+	effects.cash_picked.connect(func(n: int):
+		n = int(round(n * (1.0 + perks.effect("hustler", "cash_bonus"))))
+		state.add_money(n)
+		state.say("+" + GameState.money_text(n), Color("#f5c518"), 1.5))
 	state.player_down.connect(down_and_out)
 	police.arrested.connect(arrested)
 	traffic.car_taken.connect(_on_car_taken)
@@ -454,6 +469,8 @@ func enter_car(c) -> void:
 	car = c
 	car.driven = true
 	car.controller = null
+	car.grip_bonus = perks.bonus("driving")
+	car.speed_bonus = perks.effect("keke_king", "keke_speed") if car.kind == "keke" else 0.0
 	car.sleeping = false
 	car.set_meta("keep", true)
 	car.set_headlights(clock.darkness() > 0.35)
@@ -560,6 +577,21 @@ func scare_people(at: Vector3, r: float) -> void:
 			p.scare(at)
 
 
+## How many people are out on the street: busy mornings and evenings, quiet late at night,
+## fewer in heavy rain.
+func ped_target() -> int:
+	var h: float = state.minute_of_day() / 60.0
+	var f := 1.0
+	if h < 5.0 or h >= 23.0:
+		f = 0.3
+	elif h < 7.0 or h >= 21.0:
+		f = 0.6
+	elif (h >= 7.0 and h < 9.5) or (h >= 16.5 and h < 19.0):
+		f = 1.15
+	f *= 1.0 - clock.rain_amount() * 0.35
+	return clampi(int(round(PEDESTRIANS * f)), 4, PEDESTRIANS + 3)
+
+
 func _manage_population() -> void:
 	var p := focus_pos()
 	var paths: Array = streamer.nearby(p, PEOPLE_RADIUS, "paths")
@@ -569,7 +601,7 @@ func _manage_population() -> void:
 			if is_instance_valid(ped):
 				ped.queue_free()
 	var tries := 0
-	while peds.size() < PEDESTRIANS and not paths.is_empty() and tries < 6:
+	while peds.size() < ped_target() and not paths.is_empty() and tries < 6:
 		tries += 1
 		var raw: Array = paths[_rng.randi() % paths.size()]
 		var path := PackedVector3Array()
@@ -581,6 +613,7 @@ func _manage_population() -> void:
 		var ped = PedScript.new()
 		ped.setup(path, start, _rng.randi())
 		ped.main = self
+		ped.vendor = _rng.randf() < 0.08 and clock.darkness() < 0.5          # pushing a barrow of goods
 		add_child(ped)
 		ped.global_position = path[start] + Vector3(0, 0.3, 0)
 		peds.append(ped)
@@ -739,6 +772,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		audio.horn(car)
 	elif event.is_action_pressed("p3_radio") and car != null:
 		state.say("Radio: " + audio.next_station(), Color("#8ff0ea"), 2.0)
+	elif event.is_action_pressed("p3_ability"):
+		perks.use_ability()
 	elif event.is_action_pressed("p3_reload") and car == null:
 		weapons.start_reload()
 	elif event.is_action_pressed("p3_weapon"):
@@ -797,7 +832,7 @@ func _on_settings_closed() -> void:
 func _pause_menu() -> void:
 	get_tree().paused = true
 	hud.open_menu("Paused", "Day %d, %s. Missions done: %d of %d." % [state.day(), state.clock_text(), state.mission_idx, missions.list.size()],
-		[{"label": "Resume"}, {"label": "Save game"}, {"label": "Settings"}, {"label": "Quit to desktop"}], _on_pause_choice)
+		[{"label": "Resume"}, {"label": "Save game"}, {"label": "Settings"}, {"label": "Quit to desktop"}, {"label": "Skills & perks"}], _on_pause_choice)
 
 
 func _on_pause_choice(i: int) -> void:
@@ -811,6 +846,32 @@ func _on_pause_choice(i: int) -> void:
 		3:
 			save_game()
 			get_tree().quit()
+		4:
+			_perks_screen()
+
+
+## Skills (level and progress) and perks (unlocked, or what they still need).
+func _perks_screen() -> void:
+	get_tree().paused = true
+	var lines := PackedStringArray()
+	lines.append("Reputation %d   ·   Taxi fares %d" % [state.rep, state.fares])
+	lines.append("")
+	lines.append("SKILLS (they grow as you use them)")
+	for k in perks.data["skills"]:
+		var sk: Dictionary = perks.data["skills"][k]
+		var prog: Array = perks.xp_to_next(k)
+		var lv: int = perks.level(k)
+		var bar := ""
+		var filled := int(round(float(prog[0]) / maxf(1.0, float(prog[1])) * 10.0)) if lv < 5 else 10
+		for i in 10:
+			bar += "■" if i < filled else "□"
+		lines.append("%s   Lv %d  %s   %s" % [String(sk["name"]), lv, bar, String(sk["text"])])
+	lines.append("")
+	lines.append("PERKS")
+	for p in perks.data["perks"]:
+		var got: bool = perks.has(String(p["id"]))
+		lines.append(("✔ %s: %s" if got else "✖ %s: needs %s") % [String(p["name"]), String(p["text"]) if got else perks.needs_text(p)])
+	hud.open_menu("Skills & perks", "\n".join(lines), [{"label": "Back"}], func(_i): _pause_menu())
 
 
 func _exit_tree() -> void:

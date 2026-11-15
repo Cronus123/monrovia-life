@@ -69,7 +69,9 @@ func _physics_process(delta: float) -> void:
 	var input := Input.get_vector("p3_left", "p3_right", "p3_forward", "p3_back")
 	var cam_yaw: float = rig.look_yaw() if rig != null else 0.0
 	var dir := Basis(Vector3.UP, cam_yaw) * Vector3(input.x, 0, input.y)
-	var speed := SPRINT_SPEED if Input.is_action_pressed("p3_sprint") else WALK_SPEED
+	var pk = rig.get_parent().perks if rig != null and rig.get_parent() != null and "perks" in rig.get_parent() else null
+	var can_run: bool = pk == null or pk.can_sprint()
+	var speed: float = SPRINT_SPEED * (1.0 + (pk.effect("bush_runner", "sprint_speed") if pk != null else 0.0)) if Input.is_action_pressed("p3_sprint") and can_run else WALK_SPEED
 	if Input.is_action_just_pressed("p3_crouch") and is_on_floor() and not is_down():
 		crouching = not crouching
 		body.set_stance("crouch" if crouching else "stand")
@@ -145,8 +147,10 @@ func _update_swim(delta: float, dir: Vector3) -> bool:
 			body.play("move")
 		breath = minf(BREATH, breath + delta * 4.0)
 		return false
-	velocity.x = move_toward(velocity.x, dir.x * SWIM_SPEED, 6.0 * delta)
-	velocity.z = move_toward(velocity.z, dir.z * SWIM_SPEED, 6.0 * delta)
+	var pk = rig.get_parent().perks if rig != null and rig.get_parent() != null and "perks" in rig.get_parent() else null
+	var swim_bonus: float = pk.bonus("swimming") if pk != null else 0.0
+	velocity.x = move_toward(velocity.x, dir.x * SWIM_SPEED * (1.0 + swim_bonus * 0.4), 6.0 * delta)
+	velocity.z = move_toward(velocity.z, dir.z * SWIM_SPEED * (1.0 + swim_bonus * 0.4), 6.0 * delta)
 	# buoyancy: hold the body so the head stays just above the surface
 	var target_y := SEA_LEVEL - 1.35
 	velocity.y = clampf((target_y - global_position.y) * 4.0, -3.0, 3.0)
@@ -154,7 +158,7 @@ func _update_swim(delta: float, dir: Vector3) -> bool:
 	if dir.length() > 0.1:
 		model.rotation.y = lerp_angle(model.rotation.y, atan2(-dir.x, -dir.z), clampf(delta * 6.0, 0.0, 1.0))
 	body.set_speed(1.2 if dir.length() > 0.1 else 0.0)
-	breath -= delta
+	breath -= delta / (1.0 + swim_bonus)
 	if breath < 0.0:
 		drowning.emit(delta * 12.0)
 	return true

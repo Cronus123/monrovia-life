@@ -17,6 +17,8 @@ var rng := RandomNumberGenerator.new()
 var _yaw := 0.0
 var _honk_t := 0.0
 var paint: Variant = null
+var _pickup_t := 0.0              # keke: pulled over for a passenger (seconds left)
+var _pickup_check := 0.0
 var _wheels: Array = []           # [MeshInstance3D, rest Transform3D]
 var _spin := 0.0
 const Look := preload("res://proto3d/vehicle_look.gd")
@@ -92,6 +94,19 @@ func _physics_process(delta: float) -> void:
 			target = 0.0
 		elif near < 9.0:
 			target = minf(target, near - 2.5)
+	# kekes pull over now and then where someone is standing at the roadside
+	if kind == "keke" and not abandoned:
+		_pickup_check -= delta
+		if _pickup_t > 0.0:
+			_pickup_t -= delta
+			target = 0.0
+		elif _pickup_check <= 0.0:
+			_pickup_check = 2.0
+			if rng.randf() < 0.25 and traffic != null and traffic.main != null:
+				for ped in traffic.main.peds:
+					if is_instance_valid(ped) and not ped.is_down() and ped.global_position.distance_to(pos) < 5.0:
+						_pickup_t = rng.randf_range(2.5, 4.5)
+						break
 	# traffic lights and right of way at the junction ahead: stop at the line (7 m before)
 	var remaining: float = float(graph.edges[edge]["len"]) - s
 	if not abandoned and remaining < 26.0 and traffic != null and traffic.signals != null:

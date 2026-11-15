@@ -197,7 +197,7 @@ func _update_evasion(delta: float, p: Vector3) -> void:
 		evade_t = 0.0
 	else:
 		evade_t += delta
-		if evade_t > 5.0 + state.stars * 2.5:
+		if evade_t > (5.0 + state.stars * 2.5) * (1.0 - main.perks.effect("cool_head", "evade")):
 			clear()
 			state.say("You lost the police.", Color("#3ccf7a"), 3.0)
 

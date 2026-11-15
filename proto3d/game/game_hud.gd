@@ -24,6 +24,7 @@ var _street: Label
 var _health: ProgressBar
 var _armor: ProgressBar
 var _weapon: Label
+var _stamina: ProgressBar
 var _mini: Control
 var _mini_tex: TextureRect
 var _mini_marks: Control
@@ -111,7 +112,10 @@ func _build() -> void:
 	_health = _bar(Color("#3ccf7a"))
 	_armor = _bar(Color("#5aa9ff"))
 	_weapon = _label(13, Color("#dfe6ec"))
-	for n in [_clock, _money, _area, _street, _health, _armor, _weapon]:
+	_stamina = _bar(Color("#f5c518"))          # sprint stamina (shown while it's not full)
+	_stamina.custom_minimum_size.y = 4
+	_stamina.visible = false
+	for n in [_clock, _money, _area, _street, _health, _armor, _stamina, _weapon]:
 		v.add_child(n)
 	# minimap
 	_mini = Panel.new()
@@ -342,6 +346,11 @@ func _process(delta: float) -> void:
 	_health.get_theme_stylebox("fill").bg_color = Color("#3ccf7a") if state.health > 30.0 else Color("#ff5a6e")
 	_armor.value = state.armor
 	_armor.visible = state.armor > 0.0
+	if _stamina != null and "perks" in main:
+		var mx: float = main.perks.max_stamina()
+		_stamina.max_value = mx
+		_stamina.value = main.perks.stamina
+		_stamina.visible = main.perks.stamina < mx - 0.5
 	_weapon.text = String(main.weapons.defs[state.weapon]["name"]) + (("   %d" % state.ammo) if GameState.is_gun(state.weapon) else "")
 	# minimap: player at the centre
 	if _minimap != null and not _mm.is_empty():

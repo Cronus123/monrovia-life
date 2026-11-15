@@ -31,6 +31,7 @@ const ACTIONS := {
 	"p3_reload": ["Reload (on foot)", ["key:R"], ["joy:12"]],
 	"p3_dodge": ["Dodge roll", ["key:C"], ["joy:1"]],
 	"p3_crouch": ["Crouch", ["key:Ctrl"], ["joy:13"]],
+	"p3_ability": ["Perk ability (repair / call Big Talk)", ["key:B"], []],
 	"p3_fists": ["Fists", ["key:1"], []],
 	"p3_pistol": ["Pistol", ["key:2"], []],
 	"p3_slot_3": ["Baseball bat", ["key:3"], []],

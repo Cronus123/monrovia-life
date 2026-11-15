@@ -83,6 +83,8 @@ var _detached := 0
 var paint_color: Variant = null      # set before adding (traffic colours), or set_paint()
 var look := {}                      # vehicle_look.gd parts: lights, wheels, paint surfaces
 var braking_now := false
+var grip_bonus := 0.0               # player's Driving skill (set when they get in)
+var speed_bonus := 0.0              # Keke King
 var _ind_side := 0                  # indicator: -1 left, 1 right, 0 off
 var _ind_t := 0.0
 var _prev_vel := Vector3.ZERO
@@ -272,8 +274,8 @@ func _physics_process(delta: float) -> void:
 		if damage < 99.0:
 			damage = minf(99.0, damage + delta * 8.0)
 			_update_smoke()
-	var vmax: float = tune["vmax"]
-	var engine: float = tune["engine"]
+	var vmax: float = tune["vmax"] * (1.0 + (speed_bonus if driven else 0.0))
+	var engine: float = tune["engine"] * (1.0 + (speed_bonus if driven else 0.0))
 	var brake: float = mass * 9.2
 	# Speed-sensitive steering, turned smoothly.
 	var sl: Vector2 = tune["steer"]
@@ -302,7 +304,7 @@ func _physics_process(delta: float) -> void:
 	var up := global_basis.y
 	var spring: float = tune["spring"]
 	var damp: float = tune["damp"]
-	var mu0: float = tune["mu"]
+	var mu0: float = tune["mu"] * (1.0 + (grip_bonus if driven else 0.0))
 	# suspension first (all four), so the anti-roll bars can compare left and right
 	var comp: Array[float] = [0.0, 0.0, 0.0, 0.0]
 	var contacts: Array = [null, null, null, null]

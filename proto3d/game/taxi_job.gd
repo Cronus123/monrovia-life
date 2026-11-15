@@ -110,7 +110,8 @@ func _process(delta: float) -> void:
 		var dest: Vector3 = fare["dest"]["pos"]
 		if dest.distance_to(car.global_position) < 9.0 and absf(car.speed) < 2.0:
 			var secs := (Time.get_ticks_msec() - int(fare["started"])) / 1000.0
-			var tip := int(fare["amount"] * 0.2) if secs < fare["dist"] / 9.0 + 20.0 else 0
+			var tip := int(fare["amount"] * (0.2 + main.perks.effect("keke_king", "tip_bonus"))) if secs < fare["dist"] / 9.0 + 20.0 else 0
+			main.perks.add_fare()
 			state.add_money(fare["amount"] + tip)
 			state.say("+%s%s" % [GameState.money_text(fare["amount"] + tip), "  with a tip for a quick ride!" if tip > 0 else "  Fare paid."], Color("#f5c518"), 4.0)
 			fare = {}

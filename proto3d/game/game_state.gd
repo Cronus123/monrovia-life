@@ -51,6 +51,12 @@ var bt_done: Array = []                 # finished job ids
 var bt_posters: Array = []              # indices of posters the player pasted
 var bt_crossed := false                 # the player crossed him (he holds a grudge)
 var bt_ending := ""                     # "", "expose" or "senator"
+# skills and perks (perks.gd)
+var skill_xp := {}                      # skill -> xp
+var rep := 0                            # reputation
+var fares := 0                          # taxi fares delivered
+var perks: Array = []                   # unlocked perk ids
+var cooldowns := {}                     # perk -> game minute (or day) it's ready again
 
 
 func day() -> int:
@@ -211,7 +217,8 @@ func set_stars(n: int) -> void:
 func to_dict() -> Dictionary:
 	return {"money": money, "health": health, "armor": armor, "owned": owned, "clip": clip, "reserve": reserve,
 		"weapon": weapon, "mission_idx": mission_idx, "time_min": time_min,
-		"bt_stage": bt_stage, "bt_done": bt_done, "bt_posters": bt_posters, "bt_crossed": bt_crossed, "bt_ending": bt_ending}
+		"bt_stage": bt_stage, "bt_done": bt_done, "bt_posters": bt_posters, "bt_crossed": bt_crossed, "bt_ending": bt_ending,
+		"skill_xp": skill_xp, "rep": rep, "fares": fares, "perks": perks, "cooldowns": cooldowns}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -241,6 +248,11 @@ func from_dict(d: Dictionary) -> void:
 		bt_posters.append(int(i))
 	bt_crossed = bool(d.get("bt_crossed", false))
 	bt_ending = String(d.get("bt_ending", ""))
+	skill_xp = (d.get("skill_xp", {}) as Dictionary).duplicate()
+	rep = int(d.get("rep", 0))
+	fares = int(d.get("fares", 0))
+	perks = Array(d.get("perks", [])).duplicate()
+	cooldowns = (d.get("cooldowns", {}) as Dictionary).duplicate()
 	stars = 0
 	money_changed.emit(money)
 	health_changed.emit(health, armor)

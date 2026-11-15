@@ -144,7 +144,7 @@ func start_reload() -> void:
 	if reloading > 0.0 or not state.can_reload():
 		return
 	var d := def()
-	reloading = float(d.get("reload", 1.2))
+	reloading = float(d.get("reload", 1.2)) * maxf(0.6, 1.0 - main.perks.bonus("shooting") * 0.7)
 	if main.car == null:
 		main.player.body.play_reload(reloading)
 	main.audio.play("reload", main.player.global_position, -2.0, 1.2 / maxf(0.5, reloading))
@@ -174,7 +174,7 @@ func _shoot(d: Dictionary) -> void:
 	_fire_pellets(d, from, dir, muzzle, [player.get_rid()])
 	_kick = 1.0
 	# recoil: the camera kicks up a little (more when not aiming)
-	main.rig.pitch += float(d.get("recoil", 0.03)) * (0.6 if aiming else 1.0)
+	main.rig.pitch += float(d.get("recoil", 0.03)) * (0.6 if aiming else 1.0) * maxf(0.5, 1.0 - main.perks.bonus("shooting"))
 	if main.rig.has_method("shake"):
 		main.rig.shake(minf(0.25, float(d.get("recoil", 0.03)) * 2.5))
 	_eject_shell()
@@ -193,7 +193,8 @@ func muzzle_position() -> Vector3:
 
 func _fire_pellets(d: Dictionary, from: Vector3, dir: Vector3, muzzle: Vector3, exclude: Array[RID]) -> void:
 	var space: PhysicsDirectSpaceState3D = main.get_world_3d().direct_space_state
-	var spread := float(d.get("spread", 0.0)) * (0.5 if aiming else 1.0)
+	var skill: float = main.perks.bonus("shooting") if "perks" in main else 0.0
+	var spread := float(d.get("spread", 0.0)) * (0.5 if aiming else 1.0) * maxf(0.5, 1.0 - skill)
 	var rng: float = d.get("range", 150.0)
 	var hit_any: Array = []
 	for i in int(d.get("pellets", 1)):
@@ -215,6 +216,8 @@ func _fire_pellets(d: Dictionary, from: Vector3, dir: Vector3, muzzle: Vector3, 
 		police.crime(1, muzzle)
 	for hit in hit_any:
 		_hit(hit.collider, float(d["damage"]), float(d.get("car_damage", 0.0)))
+	if not hit_any.is_empty() and "perks" in main:
+		main.perks.add_xp("shooting", float(main.perks.data["xp"]["shot_hit"]))
 
 
 func _melee(d: Dictionary) -> void:
@@ -230,10 +233,11 @@ func _melee(d: Dictionary) -> void:
 	var fwd: Vector3 = Basis(Vector3.UP, player.model.rotation.y) * Vector3.FORWARD
 	var reach := float(d.get("reach", 0.95))
 	var at: Vector3 = player.global_position + fwd * reach
-	var dmg := float(d["damage"]) * (float(d.get("combo_bonus", 1.0)) if finisher else 1.0)
+	var dmg: float = float(d["damage"]) * (float(d.get("combo_bonus", 1.0)) if finisher else 1.0) * (1.0 + main.perks.bonus("strength"))
 	for w in main.all_walkers():
 		if w != player and not w.is_down() and w.global_position.distance_to(at) < reach:
 			main.audio.play("melee_hit" if String(d["id"]) != "fists" else "punch", at, 0.0)
+			main.perks.add_xp("strength", float(main.perks.data["xp"]["melee_hit"]))
 			_hit(w, dmg, 0.0)
 			if finisher or String(d["id"]) != "fists":
 				w.push(fwd * 3.0)

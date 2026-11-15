@@ -1,0 +1,26 @@
+{
+ "_comment": "Player skills and perks, read by proto3d/game/perks.gd. Skills grow with use (xp thresholds per level); each level gives the bonus 'per_level'. Perks unlock from reputation and milestones ('needs'); 'effect' values are read by the game systems. Keep numbers small: it's a city game, not a power fantasy.",
+ "levels": [0, 100, 260, 520, 900, 1500],
+ "skills": {
+  "stamina":  {"name": "Stamina",  "text": "Sprint longer. Grows while you run.", "per_level": 0.15},
+  "driving":  {"name": "Driving",  "text": "Better grip and steering. Grows while you drive fast.", "per_level": 0.02},
+  "shooting": {"name": "Shooting", "text": "Tighter aim, less recoil, faster reloads. Grows with hits.", "per_level": 0.07},
+  "strength": {"name": "Strength", "text": "Harder punches and swings. Grows with melee hits.", "per_level": 0.08},
+  "swimming": {"name": "Swimming", "text": "Hold your breath longer and swim faster. Grows while you swim.", "per_level": 0.2}
+ },
+ "xp": {
+  "sprint_per_s": 2.0, "drive_fast_per_s": 1.0, "shot_hit": 6.0, "melee_hit": 8.0, "swim_per_s": 2.5
+ },
+ "reputation": {
+  "mission": 40, "bigtalk_job": 25, "taxi_fare": 6, "shop_buy": 1
+ },
+ "perks": [
+  {"id": "market_mouth", "name": "Market Mouth", "text": "You know how to haggle: 15% off at every shop.", "needs": {"rep": 40}, "effect": {"shop_discount": 0.15}},
+  {"id": "keke_king", "name": "Keke King", "text": "Kekes go 15% faster for you, and taxi passengers tip more.", "needs": {"fares": 10}, "effect": {"keke_speed": 0.15, "tip_bonus": 0.25}},
+  {"id": "hustler", "name": "Hustler", "text": "People drop 50% more cash.", "needs": {"rep": 100}, "effect": {"cash_bonus": 0.5}},
+  {"id": "bush_runner", "name": "Bush Runner", "text": "40% more stamina and a little more sprint speed.", "needs": {"skill": "stamina", "level": 3}, "effect": {"stamina": 0.4, "sprint_speed": 0.05}},
+  {"id": "cool_head", "name": "Cool Head", "text": "The police lose track of you 35% faster.", "needs": {"rep": 150}, "effect": {"evade": 0.35}},
+  {"id": "roadside_mechanic", "name": "Roadside Mechanic", "text": "Press B in a damaged car to patch it up (once every 5 minutes).", "needs": {"skill": "driving", "level": 3}, "effect": {"repair": 50, "cooldown": 300}},
+  {"id": "big_talk_connect", "name": "Big Talk Connect", "text": "Press B with a wanted level: Big Talk makes a call and two stars go away (once a day).", "needs": {"bigtalk_stage": 3, "not_crossed": true}, "effect": {"stars": 2}}
+ ]
+}

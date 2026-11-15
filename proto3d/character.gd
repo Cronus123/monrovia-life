@@ -154,6 +154,7 @@ func _attach(bone: String, mesh: Mesh, offset: Vector3, scl: Vector3, key: Strin
 
 
 # ------------------------------------------------------------------ animation
+var _loop_node: AnimationNodeAnimation
 var _state_name := ""
 var _state_t := 0.0
 const RETURNS := ["punch", "shoot", "swing", "hit", "roll", "jab", "cross", "hit_head"]
@@ -184,6 +185,20 @@ func _watchdog() -> void:
 		var a := anim_player.get_animation(String(STATES[cur]))
 		if a != null and _state_t > a.length + 0.3:
 			playback.start("move")
+
+
+## Keep playing one looping animation (people chatting, a vendor pushing a barrow...).
+## "" goes back to normal movement.
+func loop_anim(anim: String) -> void:
+	if playback == null:
+		return
+	if anim == "":
+		playback.travel("move")
+		return
+	if _loop_node != null and anim_player.has_animation(anim):
+		_loop_node.animation = anim
+		anim_player.get_animation(anim).loop_mode = Animation.LOOP_LINEAR
+		playback.start("loop")
 
 
 func play(state: String) -> void:
@@ -282,11 +297,13 @@ func _build_tree() -> void:
 		var n := AnimationNodeAnimation.new()
 		n.animation = STATES[s]
 		sm.add_node(s, n)
+	_loop_node = _anim("ual/Idle_Talking" if ual else "Idle")    # loop_anim(): talking, pushing...
+	sm.add_node("loop", _loop_node)
 	var up := AnimationNodeAnimation.new()        # get up = fall played backwards
 	up.animation = "Death"
 	up.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
 	sm.add_node("get_up", up)
-	var states := ["move", "jump", "get_in", "knocked", "get_up", "punch", "shoot", "swing", "hit", "roll", "jab", "cross", "hit_head"]
+	var states := ["move", "jump", "get_in", "knocked", "get_up", "punch", "shoot", "swing", "hit", "roll", "jab", "cross", "hit_head", "loop"]
 	for a in states:
 		for b in states:
 			if a == b:

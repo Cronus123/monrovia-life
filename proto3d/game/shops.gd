@@ -143,14 +143,19 @@ func interact() -> bool:
 	var items: Array = m["items"]
 	var opts: Array = []
 	for it in items:
-		opts.append({"label": it["label"], "cost": int(it["cost"]), "disabled": not _can(it)})
+		opts.append({"label": it["label"], "cost": price(it), "disabled": not _can(it)})
 	var title: String = m["title"] if String(m["title"]) != "" else String(q["name"])
 	main.hud.open_menu(title, m["text"], opts, func(i: int): _buy(items[i], q))
 	return true
 
 
+## Price after Market Mouth.
+func price(it: Dictionary) -> int:
+	return int(round(int(it["cost"]) * (1.0 - main.perks.effect("market_mouth", "shop_discount"))))
+
+
 func _can(it: Dictionary) -> bool:
-	if not state.can_afford(int(it["cost"])):
+	if not state.can_afford(price(it)):
 		return false
 	match it["action"]:
 		"pistol":
@@ -165,8 +170,9 @@ func _can(it: Dictionary) -> bool:
 
 
 func _buy(it: Dictionary, q: Dictionary) -> void:
-	if not state.spend(int(it["cost"])):
+	if not state.spend(price(it)):
 		return
+	main.perks.add_rep("shop_buy")
 	match String(it["action"]):
 		"pistol":
 			state.give_pistol(int(it["rounds"]))
