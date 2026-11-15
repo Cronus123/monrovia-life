@@ -620,6 +620,56 @@ class City:
         return (base[0] * v, base[1] * v, base[2] * v)
 
 
+def grade_terrain_for_roads(city, road_lines):
+    """Roads used to sit on the raw 8 m terrain, which bulged above them between samples
+    and left them in trenches with the ground lapping over their edges. Here the terrain
+    cells along each road (carriageway, sidewalks and a shoulder) are set to the road's
+    own smoothed height, so roads, sidewalks, buildings and props all share one surface.
+    Where roads cross, the lower one wins. Bridges are left alone (they're above water)."""
+    target = np.full(city.H.shape, np.inf)
+    for el, g, w in road_lines:
+        t = el["tags"]
+        if t.get("bridge") not in (None, "no"):
+            continue
+        pts = resample(g, 4.0)
+        hs = [city.h(x, y) for x, y in pts]
+        # smooth along the road (no bumps from the 8 m terrain)
+        sm = [sum(hs[max(0, i - 2):i + 3]) / len(hs[max(0, i - 2):i + 3]) for i in range(len(hs))]
+        reach = w / 2 + 2.2 + 3.0                  # carriageway + sidewalk + shoulder
+        k = int(math.ceil(reach / GRID))
+        for (x, y), hv in zip(pts, sm):
+            r0, c0 = city.cell(x, y)
+            for dr in range(-k, k + 1):
+                for dc in range(-k, k + 1):
+                    r, c = r0 + dr, c0 + dc
+                    if not (0 <= r < city.ny and 0 <= c < city.nx):
+                        continue
+                    cx = city.xmin + (c + 0.5) * GRID
+                    cy = city.ymin + (r + 0.5) * GRID
+                    if (cx - x) ** 2 + (cy - y) ** 2 <= (reach + GRID * 0.5) ** 2:
+                        target[r, c] = min(target[r, c], hv)
+    mask = np.isfinite(target) & ~city.water
+    city.H[mask] = target[mask]
+    return int(mask.sum())
+
+
+def _on_road(ring, road_mask, city, RM):
+    """True if a good part of the footprint lies on a road's carriageway."""
+    xs = [p[0] for p in ring]
+    ys_ = [p[1] for p in ring]
+    c0, c1 = int((min(xs) - city.xmin) / RM), int((max(xs) - city.xmin) / RM) + 1
+    r0, r1 = int((min(ys_) - city.ymin) / RM), int((max(ys_) - city.ymin) / RM) + 1
+    if c1 <= c0 or r1 <= r0:
+        return False
+    local = np.zeros((r1 - r0 + 1, c1 - c0 + 1), bool)
+    fill_polygon(local, ring, True, city.xmin + c0 * RM, city.ymin + r0 * RM, RM)
+    sub = road_mask[max(0, r0):r0 + local.shape[0], max(0, c0):c0 + local.shape[1]]
+    loc = local[:sub.shape[0], :sub.shape[1]]
+    inside = int(loc.sum())
+    hit = int((loc & sub).sum())
+    return inside > 0 and (hit >= 6 or hit > inside * 0.2)
+
+
 def tile_of(x, y):
     return int(math.floor(x / TILE)), int(math.floor(y / TILE))
 
@@ -655,6 +705,8 @@ def main():
 
     road_lines = []
     junction_count = defaultdict(set)
+    junction_w = {}                      # widest road meeting at each OSM node
+    junction_ways = defaultdict(set)
     for el in ways:
         t = el["tags"]
         kind = t["highway"]
@@ -665,11 +717,17 @@ def main():
         w = float(t.get("width", ROAD_W[kind])) if str(t.get("width", "")).replace(".", "", 1).isdigit() else ROAD_W[kind]
         w = min(max(w, 3.0), 24.0)
         for p in el.get("geometry", []):
-            junction_count[(round(p["lat"], 7), round(p["lon"], 7))].add(t.get("name", "#%d" % el["id"]))
+            key = (round(p["lat"], 7), round(p["lon"], 7))
+            junction_count[key].add(t.get("name", "#%d" % el["id"]))
+            if t.get("bridge") in (None, "no") and kind not in ("track",):
+                junction_w[key] = max(junction_w.get(key, 0.0), w)
+                junction_ways[key].add(el["id"])
         road_lines.append((el, g, w))
         for x, y in resample(g, 4.0):
             stamp(x, y, w / 2)
     print("roads:", len(road_lines))
+    graded = grade_terrain_for_roads(city, road_lines)
+    print("terrain graded to road level at %d cells" % graded)
 
     for el, g, w in road_lines:
         t = el["tags"]
@@ -757,12 +815,13 @@ def main():
                 inner = (pts[i][0] + nx_ * (half + 0.05), pts[i][1] + ny_ * (half + 0.05))
                 outer = (pts[i][0] + nx_ * (half + sw), pts[i][1] + ny_ * (half + sw))
                 mid = (pts[i][0] + nx_ * (half + sw / 2 + 1.0), pts[i][1] + ny_ * (half + sw / 2 + 1.0))
+                walk = (pts[i][0] + nx_ * (half + sw * 0.72), pts[i][1] + ny_ * (half + sw * 0.72))
                 rr = int((mid[1] - city.ymin) / RM)
                 cc = int((mid[0] - city.xmin) / RM)
                 inside_road = 0 <= rr < road_mask.shape[0] and 0 <= cc < road_mask.shape[1] and road_mask[rr, cc]
                 ok = not inside_road and not city.is_water(*outer)
                 if ok:
-                    run.append((inner, outer, mid, ys[i], nx_, ny_))
+                    run.append((inner, outer, mid, ys[i], nx_, ny_, walk))
                 if (not ok or i == n - 1) and len(run) >= 2:
                     for k in range(len(run) - 1):
                         e, f = run[k], run[k + 1]
@@ -771,16 +830,28 @@ def main():
                         hi[tk]["Sidewalks-col"].quad("Sidewalk", P(*e[0], ya), P(*e[1], ya), P(*f[1], yb), P(*f[0], yb), COL["sidewalk"], UP)
                         hi[tk]["Sidewalks-col"].quad("Sidewalk", P(*e[0], ya - 0.2), P(*f[0], yb - 0.2), P(*f[0], yb), P(*e[0], ya), COL["curb"], (-e[4], 0, e[5]))
                         hi[tk]["Sidewalks-col"].quad("Sidewalk", P(*e[1], ya), P(*f[1], yb), P(*f[1], yb - 0.4), P(*e[1], ya - 0.4), COL["sidewalk"], (e[4], 0, -e[5]))
+                    # curb cuts: a ramp down to the road at both ends of the sidewalk, so people
+                    # (and the player) step off at junctions instead of meeting a ledge
+                    for end, nxt in ((run[0], run[1]), (run[-1], run[-2])):
+                        ax, ay_ = end[0][0] - nxt[0][0], end[0][1] - nxt[0][1]
+                        al = math.hypot(ax, ay_) or 1.0
+                        ax, ay_ = ax / al * 1.2, ay_ / al * 1.2
+                        tk = tile_of(end[2][0], end[2][1])
+                        top = end[3] + 0.15
+                        low = end[3] + 0.005
+                        hi[tk]["Sidewalks-col"].quad("Sidewalk", P(*end[0], top), P(*end[1], top),
+                                                     P(end[1][0] + ax, end[1][1] + ay_, low), P(end[0][0] + ax, end[0][1] + ay_, low), COL["sidewalk"], UP)
                     # pedestrian path and props for this run (by tile)
                     by_tile = defaultdict(list)
                     for e in run:
-                        by_tile[tile_of(*e[2])].append([round(e[2][0], 2), round(e[3] + 0.2, 2), round(-e[2][1], 2)])
+                        # people walk on the sidewalk (its top is 0.15 above the road)
+                        by_tile[tile_of(*e[2])].append([round(e[6][0], 2), round(e[3] + 0.2, 2), round(-e[6][1], 2)])
                     for tk, path in by_tile.items():
                         if len(path) >= 4:
                             meta[tk]["paths"].append(path)
                     for k, e in enumerate(run):
                         tk = tile_of(*e[2])
-                        x, y = e[1][0] - e[4] * 0.4, e[1][1] - e[5] * 0.4
+                        x, y = e[0][0] + e[4] * 0.3, e[0][1] + e[5] * 0.3              # lamp posts and palms at the curb
                         if kind in MAJOR and k % 9 == 4 and side == (1 if (k // 9) % 2 == 0 else -1):
                             # knock-over lamp posts are built by the game (props.gd)
                             meta[tk]["poles"].append([round(x, 2), round(e[3] + 0.15, 2), round(-y, 2), round(math.atan2(e[4], -e[5]), 3)])
@@ -789,13 +860,14 @@ def main():
                             meta[tk]["trees"].append([round(x, 2), round(e[3] + 0.15, 2), round(-y, 2), 0, round(hsh(x, y, 3), 2)])
                         # street furniture the game spawns as physics props
                         dt = DOWNTOWN[0] < x < DOWNTOWN[1] and DOWNTOWN[2] < y < DOWNTOWN[3]
-                        bx, by = e[1][0] - e[4] * 0.55, e[1][1] - e[5] * 0.55
+                        bx, by = e[0][0] + e[4] * 0.38, e[0][1] + e[5] * 0.38         # at the curb, leaving the walkway clear
                         yaw = round(math.atan2(e[4], -e[5]), 3)
                         u = hsh(int(bx * 3), int(by * 3), 31)
-                        if k % 6 == 3 and u < (0.55 if dt else 0.3):
+                        at_end = k == 0 or k == len(run) - 1                         # not where the sidewalk ends
+                        if not at_end and k % 6 == 3 and u < (0.55 if dt else 0.3):
                             pk = "bin" if u < 0.25 else ("drum" if u < 0.4 else "crate")
                             meta[tk]["props"].append([round(bx, 2), round(e[3] + 0.17, 2), round(-by, 2), pk, yaw])
-                        elif k % 13 == 8 and (dt or kind in MAJOR) and u < (0.6 if dt else 0.2):
+                        elif not at_end and k % 13 == 8 and (dt or kind in MAJOR) and u < (0.6 if dt else 0.2):
                             meta[tk]["props"].append([round(bx, 2), round(e[3] + 0.17, 2), round(-by, 2), "stall", yaw])
                         if kind in ("residential", "unclassified", "tertiary") and k % 5 == 2 and hsh(x, y, 9) < 0.18:
                             px, py = e[0][0] - e[4] * 1.3, e[0][1] - e[5] * 1.3
@@ -804,6 +876,25 @@ def main():
                     run = []
                 elif not ok:
                     run = []
+    # junction pads: road surface filling the corners where road strips meet, so turning
+    # cars stay on tarmac (drawn just under the strips so the strips' markings stay on top)
+    pads = 0
+    for key, ids in junction_ways.items():
+        if len(ids) < 2:
+            continue
+        x, y = city.local(*key)
+        if not city.inside(x, y) or city.is_water(x, y):
+            continue
+        r = junction_w[key] / 2 + 1.2
+        hv = city.hm(x, y) + 0.115
+        tk = tile_of(x, y)
+        ring = [(x + r * math.cos(a * math.tau / 16), y + r * math.sin(a * math.tau / 16)) for a in range(16)]
+        for i in range(16):
+            a, b = ring[i], ring[(i + 1) % 16]
+            hi[tk]["Roads-col"].tri("Road", P(x, y, hv), P(*a, hv), P(*b, hv), COL["asphalt"], UP)
+        pads += 1
+    print("junction pads:", pads)
+
     # street-name signs at junctions of two named roads
     for el in city.osm:
         if el["type"] != "way" or el.get("tags", {}).get("highway") not in ROAD_W:
@@ -821,6 +912,7 @@ def main():
     count = 0
     landmarks = []
     downtown = lambda x, y: DOWNTOWN[0] < x < DOWNTOWN[1] and DOWNTOWN[2] < y < DOWNTOWN[3]
+    skipped_on_road = 0
     for el in city.osm:
         t = el.get("tags", {})
         name = t.get("name", "")
@@ -859,6 +951,9 @@ def main():
         cx = sum(p[0] for p in ring) / len(ring)
         cy = sum(p[1] for p in ring) / len(ring)
         if city.is_water(cx, cy) or not city.inside(cx, cy):
+            continue
+        if _on_road(ring, road_mask, city, RM):
+            skipped_on_road += 1
             continue
         try:
             levels = float(str(t.get("building:levels", "")).split(";")[0])
@@ -906,7 +1001,7 @@ def main():
             _pitched_roof(m, ring, top, roof, el["id"])
         _wall_details(m, props, meta[tk], ring, base, top, levels, wall, el["id"], downtown(cx, cy) or t.get("building") in ("commercial", "retail"), city, road_mask, RM)
         count += 1
-    print("buildings:", count, "(%.0f s)" % (time.time() - t_start))
+    print("buildings:", count, "(%d skipped: footprint on a carriageway)" % skipped_on_road, "(%.0f s)" % (time.time() - t_start))
 
     # ---------------- vegetation: palms, trees and bushes on green land, grass tuft spots
     bmask = np.zeros_like(road_mask)
