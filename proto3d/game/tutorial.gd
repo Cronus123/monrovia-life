@@ -28,6 +28,7 @@ var _panel: PanelContainer
 var _title: Label
 var _say: Label
 var _hint: Label
+var _skip: Label
 var _refresh := 0.0
 
 
@@ -90,8 +91,9 @@ func _next() -> void:
 		_place_marker(_at)
 	_bought = ""
 	_update_ui()
+	_say.visible = s.has("say")
 	if s.has("say"):
-		state.say("%s: \"%s\"" % [String(data["giver"]), String(s["say"])], Color("#f5c518"), 5.0)
+		_say.text = "%s: \"%s\"" % [String(data["giver"]), String(s["say"])]
 	main.audio.ui("ui_confirm")
 
 
@@ -276,11 +278,16 @@ func _build_ui() -> void:
 	_hint.add_theme_font_size_override("font_size", 20)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_hint)
-	_say = Label.new()
-	_say.add_theme_font_size_override("font_size", 13)
-	_say.add_theme_color_override("font_color", Color(0.8, 0.84, 0.9))
-	_say.text = "Skip: Settings > Gameplay > Tutorial on a new game"
+	_say = Label.new()                       # Auntie Musu's line for this step
+	_say.add_theme_font_size_override("font_size", 16)
+	_say.add_theme_color_override("font_color", Color("#f5e9b0"))
+	_say.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_say)
+	_skip = Label.new()
+	_skip.add_theme_font_size_override("font_size", 12)
+	_skip.add_theme_color_override("font_color", Color(0.7, 0.75, 0.82))
+	_skip.text = "Skip: Settings > Gameplay > Tutorial on a new game"
+	v.add_child(_skip)
 
 
 func _update_ui() -> void:

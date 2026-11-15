@@ -187,8 +187,8 @@ func _build_ui() -> void:
 	col.anchor_top = 0.0
 	col.anchor_bottom = 1.0
 	col.offset_left = 80
-	col.offset_top = 90
-	col.offset_bottom = -60
+	col.offset_top = 60
+	col.offset_bottom = -70
 	col.offset_right = 600
 	col.add_theme_constant_override("separation", 6)
 	root.add_child(col)
@@ -210,7 +210,7 @@ func _build_ui() -> void:
 	tag.add_theme_color_override("font_color", Color(0.85, 0.88, 0.93))
 	col.add_child(tag)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 40)
+	gap.custom_minimum_size = Vector2(0, 22)
 	col.add_child(gap)
 
 	_loading = Label.new()
@@ -219,7 +219,7 @@ func _build_ui() -> void:
 	col.add_child(_loading)
 
 	_menu = VBoxContainer.new()
-	_menu.add_theme_constant_override("separation", 8)
+	_menu.add_theme_constant_override("separation", 6)
 	_menu.visible = false
 	col.add_child(_menu)
 	if SaveSystem.has_save():
@@ -297,7 +297,7 @@ func _styled_button(label: String) -> Button:
 	var b := Button.new()
 	b.text = label
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.custom_minimum_size = Vector2(320, 46)
+	b.custom_minimum_size = Vector2(320, 42)
 	b.add_theme_font_size_override("font_size", 22)
 	var normal := StyleBoxFlat.new()
 	normal.bg_color = Color(0, 0, 0, 0.35)

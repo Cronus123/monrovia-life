@@ -66,8 +66,18 @@ Switching to or from Low changes the renderer, so the game asks for a restart.
 ## Play
 1. Install **Godot 4.7** (standard version) from https://godotengine.org/download.
 2. Build the city data once (see below) — it isn't stored in Git because it's large.
-3. Open `project.godot` in Godot and run `proto3d/main_city.tscn` (F6), or export the
-   **Windows 3D City** preset (`build/windows-city/MonroviaCity.exe`).
+3. Open `project.godot` in Godot and press F5: the title screen (`proto3d/title.tscn`) loads
+   the city behind its menu. Or export the **Windows 3D City** preset
+   (`build/windows-city/MonroviaCity.exe`).
+
+A **new game** starts with Auntie Musu's tutorial, *Welcome to Monrovia* (walk, take the
+taxi, drive to a cookshop, buy food, pick up a bat, hit a training dummy, open the weapon
+wheel, rest at the safehouse to save). Turn it off in Settings > Gameplay.
+
+**Playtesting:** press **F8** any time to report a bug. It takes a screenshot, asks for a
+note and saves a folder in the game's user data (`%APPDATA%/Godot/app_userdata/Monrovia Life- Streets/bug_reports/`)
+(screenshot, report with version, place, position and FPS, and the end of the log). Nothing
+is uploaded: send the folder to the developers. The version is on the title screen.
 
 ## Controls
 Every control can be changed in **Settings → Controls** (saved to `user://settings.cfg`).
@@ -87,7 +97,8 @@ Every control can be changed in **Settings → Controls** (saved to `user://sett
 | Camera view (third / first person) | V | R3 |
 | Switch weapon | Q, 1, 2 | LB |
 | Map | M | Back |
-| Pause (save, settings, quit) | Esc | Start |
+| Pause (resume, settings, save, quit to title) | Esc | Start |
+| Report a bug | F8 | |
 
 **Settings** (from the start and pause menus): volumes for master, music, sound effects and
 ambience; resolution, fullscreen, V-sync; graphics quality (Low, Medium, High); mouse/stick
@@ -110,11 +121,11 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs ten checks: Godot import, start-up,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs thirteen checks: Godot import, start-up,
 the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
 shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
-damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, and skills/perks/street life. It fails on any error or warning.
+damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, skills/perks/street life, the leg animation, driving (every vehicle laps a test ground) and the playtest build (title screen, tutorial, pause menu, bug report). It fails on any error or warning.
 `tests/world_audit.gd` sweeps the city for physics/road/prop/people problems; `tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout

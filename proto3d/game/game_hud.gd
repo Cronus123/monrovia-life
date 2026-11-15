@@ -368,7 +368,8 @@ func _process(delta: float) -> void:
 	if map_open:
 		_map_marks.queue_redraw()
 	# panels
-	var obj: String = main.objective_text()
+	# the tutorial shows its objective in its own panel at the top
+	var obj: String = "" if (main.get("tutorial") != null and main.tutorial.active) else main.objective_text()
 	_objective.visible = obj != "" and not map_open
 	_objective.text = obj
 	var pr: String = main.prompt_text()
