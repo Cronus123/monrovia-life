@@ -116,16 +116,19 @@ func _display_tab() -> Control:
 	_row(g, "V-sync", _check(settings.vsync, func(b: bool):
 		settings.vsync = b
 		settings.apply_system()))
+	var note := Label.new()
 	var q := OptionButton.new()
 	for i in GameSettings.QUALITY.size():
 		q.add_item(GameSettings.QUALITY[i], i)
 	q.select(settings.quality)
 	q.item_selected.connect(func(i: int):
 		settings.quality = i
-		settings.apply_world(main))
+		settings.apply_world(main)
+		if settings.write_renderer_override():
+			note.text = "Restart the game to switch renderer (Low uses OpenGL, Medium/High use Vulkan)."
+		)
 	_row(g, "Graphics quality", q)
-	var note := Label.new()
-	note.text = "Low: no shadows, shorter view.  High: longer view, more traffic, anti-aliasing."
+	note.text = "Low: OpenGL, no shadows or effects.  Medium: shadows, ambient occlusion, glow.\nHigh: + light bounce, reflections, light shafts, longer view, more traffic."
 	note.add_theme_font_size_override("font_size", 12)
 	g.add_child(Control.new())
 	g.add_child(note)

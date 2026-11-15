@@ -83,26 +83,80 @@ func apply_world(main) -> void:
 	main.rig.sensitivity = sensitivity
 	main.rig.invert_y = invert_y
 	main.rig.cam.fov = fov
+	main.rig.base_fov = fov
+	main.rig.motion_blur = quality >= 1
 	var sun: DirectionalLight3D = main._sun
+	var env: Environment = main._env
+	var fplus := RenderingServer.get_current_rendering_method() == "forward_plus"
 	match quality:
 		0:
 			sun.shadow_enabled = false
 			main.streamer.hi_radius = 360.0
 			main.streamer.lo_radius = 900.0
+			main.streamer.detail_range = 140.0
 			main.traffic.max_cars = 10
 		1:
 			sun.shadow_enabled = true
-			sun.directional_shadow_max_distance = 70.0
+			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+			sun.directional_shadow_max_distance = 90.0
 			main.streamer.hi_radius = 420.0
 			main.streamer.lo_radius = 1300.0
+			main.streamer.detail_range = 220.0
 			main.traffic.max_cars = 16
 		2:
 			sun.shadow_enabled = true
-			sun.directional_shadow_max_distance = 110.0
+			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+			sun.directional_shadow_max_distance = 150.0
 			main.streamer.hi_radius = 480.0
 			main.streamer.lo_radius = 1700.0
+			main.streamer.detail_range = 320.0
 			main.traffic.max_cars = 20
-	main.get_viewport().msaa_3d = Viewport.MSAA_2X if quality == 2 else Viewport.MSAA_DISABLED
+	# Forward+ screen-space effects (the Compatibility renderer ignores these)
+	var med := fplus and quality >= 1
+	var high := fplus and quality >= 2
+	env.ssao_enabled = med
+	env.ssao_radius = 1.6
+	env.ssao_intensity = 2.2
+	env.ssao_light_affect = 0.15
+	env.ssil_enabled = high
+	env.ssil_intensity = 0.8
+	env.ssr_enabled = high                  # wet roads, water, windows
+	env.ssr_max_steps = 48
+	env.glow_enabled = med
+	env.glow_intensity = 0.55
+	env.glow_bloom = 0.04
+	env.glow_hdr_threshold = 1.1
+	env.volumetric_fog_enabled = high       # light shafts at dawn/dusk, haze in rain
+	env.volumetric_fog_density = 0.006
+	env.volumetric_fog_anisotropy = 0.6
+	env.volumetric_fog_length = 160.0
+	env.volumetric_fog_sky_affect = 0.0
+	sun.light_volumetric_fog_energy = 1.2
+	sun.shadow_blur = 1.5 if high else 1.0
+	RenderingServer.directional_soft_shadow_filter_set_quality(
+			RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM if high else RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+	RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_MEDIUM if high else RenderingServer.ENV_SSAO_QUALITY_LOW, not high, 0.5, 2, 50.0, 300.0)
+	main.get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+	main.get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if quality >= 1 else Viewport.SCREEN_SPACE_AA_DISABLED
+	if main.has_method("apply_camera_effects"):
+		main.apply_camera_effects(quality)
+
+
+## The Low preset runs on the Compatibility (OpenGL) renderer, Medium/High on Forward+
+## (Vulkan). The renderer is chosen at start-up, so it's written to override.cfg next to
+## the game and needs a restart. Returns true when a restart is needed.
+func write_renderer_override() -> bool:
+	var want := "gl_compatibility" if quality == 0 else "forward_plus"
+	var dir := ProjectSettings.globalize_path("res://") if OS.has_feature("editor") else OS.get_executable_path().get_base_dir()
+	var path := dir.path_join("override.cfg")
+	if want == "forward_plus":
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+	else:
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f != null:
+			f.store_string("[rendering]\n\nrenderer/rendering_method=\"gl_compatibility\"\n")
+	return want != RenderingServer.get_current_rendering_method() and DisplayServer.get_name() != "headless"
 
 
 func _bus(name: String, v: float) -> void:

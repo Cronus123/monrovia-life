@@ -136,6 +136,21 @@ func _ready() -> void:
 
 
 # ------------------------------------------------------------------ setup
+## Camera exposure: auto exposure on Forward+ (adapts going from shade to sun and at
+## night); depth of field stays off.
+func apply_camera_effects(quality: int) -> void:
+	var attr := CameraAttributesPractical.new()
+	attr.dof_blur_far_enabled = false
+	attr.dof_blur_near_enabled = false
+	if quality >= 1 and RenderingServer.get_current_rendering_method() == "forward_plus":
+		attr.auto_exposure_enabled = true
+		attr.auto_exposure_scale = 0.35
+		attr.auto_exposure_speed = 0.6
+		attr.auto_exposure_min_sensitivity = 70.0
+		attr.auto_exposure_max_sensitivity = 140.0
+	rig.cam.attributes = attr
+
+
 func _build_environment() -> void:
 	var sky_mat := ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color("#2f6fb3")
@@ -149,9 +164,11 @@ func _build_environment() -> void:
 	_env.sky = sky
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	_env.ambient_light_energy = 0.55
-	_env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	_env.tonemap_exposure = 0.95
-	_env.tonemap_white = 6.0
+	_env.ambient_light_sky_contribution = 0.45       # less blue in the shadows
+	_env.ambient_light_color = Color("#d9cfc0")
+	_env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	_env.tonemap_exposure = 1.0
+	_env.tonemap_white = 8.0
 	_env.fog_enabled = true
 	_env.fog_light_color = Color("#bcd3e2")
 	_env.fog_density = 0.0006
@@ -481,6 +498,7 @@ func _on_car_crashed(c, other, impact: float) -> void:
 	audio.play("crash", c.global_position, clampf(-10.0 + impact * 0.6, -10.0, 6.0))
 	if c != car:
 		return
+	rig.shake(clampf(impact / 25.0, 0.15, 1.0))
 	if other is TrafficCar:
 		var tc: TrafficCar = other
 		if tc.kind == "police":
@@ -495,6 +513,7 @@ func _on_car_crashed(c, other, impact: float) -> void:
 func _on_car_exploded(c) -> void:
 	var at: Vector3 = c.global_position
 	effects.explosion(at)
+	rig.shake(clampf(1.2 - rig.cam.global_position.distance_to(at) / 40.0, 0.0, 1.0))
 	scare_people(at, 30.0)
 	for w in all_walkers():
 		if w != player and w.global_position.distance_to(at) < 6.0:

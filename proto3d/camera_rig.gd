@@ -27,10 +27,16 @@ var _blend_t := 1.0
 var _idle_look := 0.0
 var sensitivity := 1.0         # from Settings (1 = default)
 var invert_y := false
+var base_fov := 70.0            # from Settings; widens a little at speed
+var motion_blur := true         # off on the Low preset
+var _shake := 0.0               # crash shake strength, decays
+var _blur: ShaderMaterial
+var _blur_rect: ColorRect
 const STICK_SPEED := 2.6       # rad/s at full right-stick deflection
 
 
 func _ready() -> void:
+	_make_blur()
 	top_level = true
 	arm = SpringArm3D.new()
 	arm.margin = 0.25
@@ -137,3 +143,43 @@ func _process(delta: float) -> void:
 		cam.global_transform = _blend_from.interpolate_with(goal, t)
 	else:
 		cam.global_transform = goal
+	_speed_effects(delta)
+
+
+## Crash/explosion shake: strength ~0.2 (bump) .. 1.0 (big crash).
+func shake(strength: float) -> void:
+	_shake = clampf(maxf(_shake, strength), 0.0, 1.2)
+
+
+func _speed_effects(delta: float) -> void:
+	var speed := 0.0
+	if in_vehicle and target is RigidBody3D:
+		speed = (target as RigidBody3D).linear_velocity.length()
+	cam.fov = lerpf(cam.fov, base_fov + clampf((speed - 12.0) * 0.35, 0.0, 12.0), clampf(delta * 3.0, 0.0, 1.0))
+	if _shake > 0.001:
+		var t := Time.get_ticks_msec() * 0.001
+		var a := _shake * _shake
+		cam.global_transform.origin += cam.global_basis * Vector3(sin(t * 47.0) * 0.12, sin(t * 59.0 + 1.3) * 0.1, 0.0) * a
+		cam.rotate_object_local(Vector3.FORWARD, sin(t * 31.0) * 0.03 * a)
+		_shake = maxf(0.0, _shake - delta * 1.6)
+	if _blur != null:
+		var amount := clampf((speed - 14.0) / 30.0, 0.0, 1.0) * 0.012 if motion_blur else 0.0
+		_blur.set_shader_parameter("amount", amount)
+		_blur_rect.visible = amount > 0.0005
+
+
+## Subtle radial motion blur at speed (a full-screen pass, only shown while it's needed).
+func _make_blur() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var layer := CanvasLayer.new()
+	layer.layer = -1                     # under the HUD
+	add_child(layer)
+	_blur_rect = ColorRect.new()
+	_blur_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_blur_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_blur = ShaderMaterial.new()
+	_blur.shader = preload("res://proto3d/motion_blur.gdshader")
+	_blur_rect.material = _blur
+	_blur_rect.visible = false
+	layer.add_child(_blur_rect)
