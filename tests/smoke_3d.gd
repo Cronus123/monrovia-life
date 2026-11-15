@@ -38,6 +38,15 @@ func _physics_process(_d: float) -> bool:
 			start_pos = m.player.global_position
 			Input.action_press("p3_forward")
 		120:
+			var pb = m.player.body
+			for a in ["Idle", "Walk", "Run", "Jump", "SitDown", "Death"]:
+				check(pb.anim_player.has_animation(a), "character has the %s animation" % a)
+			check(pb.tree.active and pb.current_state() == "move", "locomotion state is playing (%s)" % pb.current_state())
+			check(pb.tree.get("parameters/move/blend/blend_position") > 1.0, "walk/run blend follows speed")
+			var models := {}
+			for ped in m.peds:
+				models[ped.body.rig.scene_file_path] = true
+			check(models.size() >= 3, "pedestrians use varied character models (%d)" % models.size())
 			Input.action_release("p3_forward")
 			check(m.player.global_position.distance_to(start_pos) > 2.0, "player walks forward")
 			m.rig.toggle_view()
@@ -47,6 +56,8 @@ func _physics_process(_d: float) -> bool:
 			check(not m.rig.is_first_person(), "V switches back to third person")
 			m.player.knockdown(Vector3(4, 0, 0))
 			check(m.player.is_down(), "player can be knocked down")
+		140:
+			check(m.player.body.current_state() == "knocked", "fall animation plays (%s)" % m.player.body.current_state())
 		300:
 			check(not m.player.is_down(), "player gets back up")
 			var moved := 0

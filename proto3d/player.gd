@@ -20,7 +20,7 @@ var _was_on_floor := true
 
 
 func _ready() -> void:
-	_setup_walker({"skin": "#5a3825", "shirt": "#c8173a", "trousers": "#2b3a55", "shoes": "#1b1b1b", "hair": "#151210"})
+	_setup_walker({"model": "Casual2_Male", "skin": "#5a3825", "shirt": "#c8173a", "pants": "#2b3a55", "hair": "#151210"})
 	model = body
 
 

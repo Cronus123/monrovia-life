@@ -5,8 +5,8 @@ extends CharacterBody3D
 
 const CharacterScript := preload("res://proto3d/character.gd")
 const STEP_HEIGHT := 0.36
-const KNOCK_TIME := 1.6
-const GET_UP_TIME := 0.9
+const KNOCK_TIME := 1.4
+var GET_UP_TIME := 1.2           # set from the character's fall animation
 
 var body                        # character.gd
 var spawn_point := Vector3.ZERO
@@ -28,8 +28,9 @@ func _setup_walker(outfit: Dictionary) -> void:
 	shape.position.y = 0.89
 	add_child(shape)
 	body = CharacterScript.new()
+	body.set_outfit(outfit)          # before adding: the outfit picks the model
 	add_child(body)
-	body.set_outfit(outfit)
+	GET_UP_TIME = minf(body.get_up_time(), 1.4)
 
 
 func is_down() -> bool:
