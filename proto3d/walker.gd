@@ -24,13 +24,24 @@ func _setup_walker(outfit: Dictionary) -> void:
 	collision_mask = 1 | 4 | 8
 	floor_snap_length = 0.45
 	floor_max_angle = deg_to_rad(48)
+	# body: a capsule that stops 0.38 m above the feet...
 	var shape := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.32
-	cap.height = 1.78
+	cap.height = 1.4
 	shape.shape = cap
-	shape.position.y = 0.89
+	shape.position.y = 1.08
 	add_child(shape)
+	# ...standing on a separation ray: curbs, ramps, seams between road, sidewalk and tile
+	# meshes and other small steps (up to ~0.4 m) are stepped over smoothly, not snagged on
+	var feet := CollisionShape3D.new()
+	var ray := SeparationRayShape3D.new()
+	ray.length = 0.42
+	ray.slide_on_slope = true
+	feet.shape = ray
+	feet.position.y = 0.42
+	feet.rotation.x = PI / 2                       # the ray points down
+	add_child(feet)
 	body = CharacterScript.new()
 	body.set_outfit(outfit)          # before adding: the outfit picks the model
 	add_child(body)

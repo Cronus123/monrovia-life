@@ -69,7 +69,7 @@ func run() -> void:
 			if np.distance_to(want) < 500.0 and not areas.any(func(a): return a.distance_to(np) < 300.0):
 				areas.append(np)
 	var totals := {"lanes": 0, "hole": 0, "building_on_road": 0, "step": 0, "terrain_over_road": 0, "seam_checks": 0, "seam_step": 0, "props": 0, "prop_float": 0, "prop_sunk": 0,
-		"peds": 0, "ped_stuck": 0, "ped_under": 0, "cars": 0, "car_stuck": 0, "car_off": 0,
+		"peds": 0, "ped_stuck": 0, "ped_under": 0, "ped_in_building": 0, "cars": 0, "car_stuck": 0, "car_off": 0,
 		"walk_samples": 0, "walk_fall": 0, "walk_stuck": 0}
 	var examples := {}
 	for ai in areas.size():
@@ -114,6 +114,10 @@ func run() -> void:
 			var b := ray(Vector3(x + 0.3, c.y + 60, z), Vector3(x + 0.3, c.y - 60, z))
 			if a.is_empty() or b.is_empty():
 				continue
+			var an := String(a.collider.get_parent().name)
+			var bn := String(b.collider.get_parent().name)
+			if not (an.begins_with("Terrain") and bn.begins_with("Terrain")):
+				continue                                   # a roof or curb on one side: not a seam
 			totals["seam_checks"] += 1
 			if absf((a.position as Vector3).y - (b.position as Vector3).y) > 0.25:
 				totals["seam_step"] += 1
@@ -156,7 +160,11 @@ func run() -> void:
 			totals["peds"] += 1
 			var moved: float = (p.global_position - start[p]).length()
 			var gr := ray(p.global_position + Vector3(0, 30, 0), p.global_position + Vector3(0, -30, 0))
-			if not gr.is_empty() and (gr.position as Vector3).y > p.global_position.y + 0.8:
+			var gname := String(gr.collider.get_parent().name) if not gr.is_empty() else ""
+			if not gr.is_empty() and (gr.position as Vector3).y > p.global_position.y + 0.8 and gname.begins_with("Buildings"):
+				totals["ped_in_building"] += 1
+				examples["ped_in_building"] = p.global_position
+			elif not gr.is_empty() and (gr.position as Vector3).y > p.global_position.y + 0.8:
 				totals["ped_under"] += 1
 				examples["ped_under"] = p.global_position
 			elif moved < 1.0 and not p.waiting and not p.is_down():
@@ -194,9 +202,11 @@ func run() -> void:
 				if m.player.global_position.y < target.y - 2.5:
 					totals["walk_fall"] += 1
 					examples["walk_fall"] = target
-				elif (m.player.global_position - before).length() < 0.5:
+				elif (m.player.global_position - before).length() < 0.5 and Vector2(target.x - before.x, target.z - before.z).length() > 1.2:
 					totals["walk_stuck"] += 1
 					examples["walk_stuck"] = target
+					print("AUDIT snag at %s (blocked walking to %s)" % [before.snapped(Vector3(0.01, 0.01, 0.01)), target])
+					break                                  # one snag per path, not one per remaining point
 			Input.action_release("p3_forward")
 		await snap("area%d" % ai)
 	print("AUDIT totals ", totals)

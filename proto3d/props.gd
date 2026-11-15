@@ -128,16 +128,16 @@ static func _stall(tile: Node3D, at: Vector3, yaw: float) -> void:
 	var canopy := _body(true, 60.0)
 	canopy.position = at
 	canopy.rotation.y = yaw
-	_shape(canopy, Vector3(2.4, 0.1, 1.8), Vector3(0, 2.3, 0))
+	_shape(canopy, Vector3(2.4, 0.1, 1.25), Vector3(0, 2.3, 0))
 	for x in [-1.1, 1.1]:
-		for z in [-0.8, 0.8]:
+		for z in [-0.5, 0.5]:                   # shallow: the sidewalk stays walkable behind it
 			_shape(canopy, Vector3(0.08, 2.3, 0.08), Vector3(x, 1.15, z))
 	_mesh_inst(canopy, "stall_canopy")
 	tile.add_child(canopy)
 	var table := _body(false, 25.0)
 	table.position = at
 	table.rotation.y = yaw
-	_shape(table, Vector3(2.0, 0.85, 1.0), Vector3(0, 0.43, 0))
+	_shape(table, Vector3(2.0, 0.85, 0.8), Vector3(0, 0.43, 0))
 	_mesh_inst(table, "stall_table")
 	tile.add_child(table)
 	for i in 3:
@@ -171,13 +171,13 @@ static func _mesh(key: String) -> Mesh:
 			_box(st, Vector3(0, 0.3, 0), Vector3(0.6, 0.6, 0.6), Color("#a8834f"))
 		"stall_canopy":
 			for x in [-1.1, 1.1]:
-				for z in [-0.8, 0.8]:
+				for z in [-0.5, 0.5]:
 					_box(st, Vector3(x, 1.15, z), Vector3(0.07, 2.3, 0.07), Color("#6b4f33"))
-			_box(st, Vector3(0, 2.32, 0), Vector3(2.5, 0.06, 1.95), Color("#8e969c"))
+			_box(st, Vector3(0, 2.32, 0), Vector3(2.5, 0.06, 1.35), Color("#8e969c"))
 		"stall_table":
-			_box(st, Vector3(0, 0.82, 0), Vector3(2.0, 0.06, 1.0), Color("#8a6a45"))
+			_box(st, Vector3(0, 0.82, 0), Vector3(2.0, 0.06, 0.8), Color("#8a6a45"))
 			for x in [-0.9, 0.9]:
-				for z in [-0.42, 0.42]:
+				for z in [-0.33, 0.33]:
 					_box(st, Vector3(x, 0.4, z), Vector3(0.06, 0.8, 0.06), Color("#6b4f33"))
 		_:
 			var cols := [Color("#d9472b"), Color("#f2b632"), Color("#4f9a3a")]   # peppers, bananas, greens

@@ -82,7 +82,7 @@ func _process(delta: float) -> void:
 			var key := "stall:%d:%d" % [int(at.x), int(at.z)]
 			if scenes.has(key) or at.distance_to(p) < 20.0:
 				continue
-			var back := Basis(Vector3.UP, float(s[4])) * Vector3(0, 0, 1.0)      # behind the table, away from the road
+			var back := Basis(Vector3.UP, float(s[4])) * Vector3(0, 0, 0.7)      # behind the table, away from the road
 			_spawn_scene(key, "seller", at, [[at + back, float(s[4]) + PI, "ual/Idle_Talking", 1.0]])
 			if people_count() >= MAX_PEOPLE:
 				return

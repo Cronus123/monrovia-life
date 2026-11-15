@@ -815,7 +815,7 @@ def main():
                 inner = (pts[i][0] + nx_ * (half + 0.05), pts[i][1] + ny_ * (half + 0.05))
                 outer = (pts[i][0] + nx_ * (half + sw), pts[i][1] + ny_ * (half + sw))
                 mid = (pts[i][0] + nx_ * (half + sw / 2 + 1.0), pts[i][1] + ny_ * (half + sw / 2 + 1.0))
-                walk = (pts[i][0] + nx_ * (half + sw * 0.72), pts[i][1] + ny_ * (half + sw * 0.72))
+                walk = (pts[i][0] + nx_ * (half + sw * 0.8), pts[i][1] + ny_ * (half + sw * 0.8))
                 rr = int((mid[1] - city.ymin) / RM)
                 cc = int((mid[0] - city.xmin) / RM)
                 inside_road = 0 <= rr < road_mask.shape[0] and 0 <= cc < road_mask.shape[1] and road_mask[rr, cc]
@@ -1041,6 +1041,37 @@ def main():
                 meta[tk]["grass"].append([round(jx, 1), round(h, 2), round(-jy, 1)])
                 nveg[2] += 1
     print("vegetation: %d trees, %d bushes, %d grass spots" % tuple(nveg))
+    # sidewalk paths, props and lamp posts must stay out of buildings (some OSM footprints
+    # reach the sidewalk): drop points within 2 m of a building and split paths there
+    near_b = bmask.copy()
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            near_b |= np.roll(np.roll(bmask, dr, 0), dc, 1)
+
+    def in_building(gx, gz):
+        x, y = gx, -gz
+        r, c = int((y - city.ymin) / RM), int((x - city.xmin) / RM)
+        return 0 <= r < near_b.shape[0] and 0 <= c < near_b.shape[1] and bool(near_b[r, c])
+
+    cut = 0
+    for tk, mt in meta.items():
+        new_paths = []
+        for path in mt["paths"]:
+            run = []
+            for q in path:
+                if in_building(q[0], q[2]):
+                    cut += 1
+                    if len(run) >= 4:
+                        new_paths.append(run)
+                    run = []
+                else:
+                    run.append(q)
+            if len(run) >= 4:
+                new_paths.append(run)
+        mt["paths"] = new_paths
+        mt["props"] = [q for q in mt["props"] if not in_building(q[0], q[2])]
+        mt["poles"] = [q for q in mt["poles"] if not in_building(q[0], q[2])]
+    print("sidewalk points kept out of buildings:", cut)
     # the plant models themselves, instanced by the game at the positions in the tile meta
     veg = []
     for name, fn in (("Palm", lambda m, f: _palm(m, f, 0.0, 0.0, 0.0, 0.5)),
