@@ -4,13 +4,21 @@ extends RigidBody3D
 ## load on that wheel) and engine/brake force, so the car has real weight transfer,
 ## body roll, grip vs. handbrake drift, and pushes or gets pushed in collisions.
 ## Forward is -Z. W/S throttle and brake/reverse, A/D steer, Space handbrake.
+##
+## Driven by the player (driven = true), by an AI `controller` (any object with
+## drive_input(car) -> Vector3(throttle, steer, handbrake)), or parked.
+## Damage from crashes and bullets sets it on fire at 100%; it explodes 4 s later.
+
+signal exploded(car: RigidBody3D)
+signal hit_person(car: RigidBody3D, person: Node, speed: float)
+signal crashed(car: RigidBody3D, other: Node, impact: float)
 
 const WHEELS := [Vector3(-0.82, 0.45, -1.35), Vector3(0.82, 0.45, -1.35),   # front L, R
 		Vector3(-0.82, 0.45, 1.35), Vector3(0.82, 0.45, 1.35)]            # rear L, R
 const REST := 0.42            # suspension travel (m)
 const WHEEL_R := 0.36
 const SPRING := 26000.0       # N/m per wheel
-const DAMP := 2600.0          # NÂ·s/m per wheel
+const DAMP := 2600.0          # N·s/m per wheel
 const ENGINE := 8800.0        # N at the rear axle
 const BRAKE := 11000.0        # N total
 const MAX_SPEED := 31.0       # m/s (about 110 km/h)
@@ -22,20 +30,32 @@ const AIR_DRAG := 0.95
 const STEER_MAX := 0.55       # rad at walking pace
 const STEER_MIN := 0.13       # rad at top speed
 const STEER_RATE := 2.6       # rad/s the wheels turn
+const BURN_TIME := 4.0
 
 @export var model_scene: PackedScene
+var kind := "car"             # taxi, keke, car, suv, sport, truck, van, police
 var driven := false
+var controller: Object = null # AI driver
 var speed := 0.0              # forward speed (m/s), for the HUD and tests
 var steer := 0.0
-var damage := 0.0             # 0..100, from crashes
+var damage := 0.0             # 0..100, from crashes and bullets
+var burning := -1.0           # seconds until the explosion while on fire, else < 0
+var wrecked := false
+var siren := false
+var mission_tag := ""
 var model: Node3D
 var hit_area: Area3D
 var _spawn := Transform3D()
 var _upside_t := 0.0
 var _still_t := 0.0
+var _lights: Array[SpotLight3D] = []
+var _fire: CPUParticles3D
+var _beacon: MeshInstance3D
+var _beacon_mats: Array[StandardMaterial3D] = []
 
 
 func _ready() -> void:
+	add_to_group("cars")
 	mass = 1200.0
 	collision_layer = 4
 	collision_mask = 1 | 4 | 8          # world, cars, props (people are handled by hit_area)
@@ -77,6 +97,8 @@ func _ready() -> void:
 	hs.position.y = 1.0
 	hit_area.add_child(hs)
 	add_child(hit_area)
+	if kind == "police":
+		_add_beacon()
 	_spawn = global_transform
 
 
@@ -102,11 +124,21 @@ func reset_to(t: Transform3D) -> void:
 	angular_velocity = Vector3.ZERO
 
 
+func condition() -> int:
+	return int(clampf(100.0 - damage, 0.0, 100.0))
+
+
 func _physics_process(delta: float) -> void:
 	var fwd := -global_basis.z
 	speed = linear_velocity.dot(fwd)
+	_update_fire(delta)
+	if _beacon != null and siren:
+		var on := int(Time.get_ticks_msec() / 180) % 2 == 0
+		_beacon_mats[0].emission_energy_multiplier = 3.0 if on else 0.2
+		_beacon_mats[1].emission_energy_multiplier = 0.2 if on else 3.0
+	var ai := controller != null and not driven and not wrecked
 	# Parked and settled: let the physics engine put it to sleep (a hit wakes it up).
-	if not driven:
+	if not driven and not ai:
 		if sleeping:
 			return
 		if linear_velocity.length() < 0.08 and angular_velocity.length() < 0.08:
@@ -118,11 +150,18 @@ func _physics_process(delta: float) -> void:
 			_still_t = 0.0
 	var throttle := 0.0
 	var steer_in := 0.0
-	var handbrake := not driven
-	if driven:
+	var handbrake := not driven and not ai
+	if driven and not wrecked:
 		throttle = Input.get_axis("p3_back", "p3_forward")
 		steer_in = Input.get_axis("p3_right", "p3_left")
 		handbrake = Input.is_action_pressed("p3_jump")
+	elif ai:
+		var inp: Vector3 = controller.drive_input(self)
+		throttle = inp.x
+		steer_in = inp.y
+		handbrake = inp.z > 0.5
+	if burning >= 0.0:
+		throttle *= 0.4
 	# Speed-sensitive steering, turned smoothly.
 	var lock := lerpf(STEER_MAX, STEER_MIN, clampf(absf(speed) / MAX_SPEED, 0.0, 1.0))
 	steer = move_toward(steer, steer_in * lock, STEER_RATE * delta)
@@ -145,7 +184,6 @@ func _physics_process(delta: float) -> void:
 
 	var space := get_world_3d().direct_space_state
 	var up := global_basis.y
-	var grounded := 0
 	for i in 4:
 		var front := i < 2
 		var origin: Vector3 = global_transform * (WHEELS[i] as Vector3)
@@ -153,7 +191,6 @@ func _physics_process(delta: float) -> void:
 		var hit := space.intersect_ray(q)
 		if hit.is_empty():
 			continue
-		grounded += 1
 		var contact: Vector3 = hit.position
 		var compression := (REST + WHEEL_R) - origin.distance_to(contact)
 		var r := contact - global_position
@@ -196,6 +233,8 @@ func _hit_people() -> void:
 		rel.y = 0.0
 		var away := rel.normalized()
 		if v.length() > 4.0 and v.dot(away) > 0.0:
+			if not b.is_down():
+				hit_person.emit(self, b, v.length())
 			b.knockdown(v * 0.8 + away * 2.0)
 			damage = minf(100.0, damage + 1.0)
 		else:
@@ -207,7 +246,110 @@ func _on_body_entered(other: Node) -> void:
 	if other is RigidBody3D:
 		impact = (linear_velocity - (other as RigidBody3D).linear_velocity).length()
 	if impact > 6.0:
-		damage = minf(100.0, damage + impact * 0.8)
+		apply_damage(impact * 0.8)
+		crashed.emit(self, other, impact)
+
+
+# ------------------------------------------------------------------ damage, fire, explosion
+func apply_damage(amount: float) -> void:
+	if wrecked:
+		return
+	damage = minf(100.0, damage + amount)
+	if damage >= 100.0 and burning < 0.0:
+		burning = BURN_TIME
+		_start_fire()
+
+
+func _start_fire() -> void:
+	_fire = CPUParticles3D.new()
+	_fire.amount = 40
+	_fire.lifetime = 0.8
+	_fire.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_fire.emission_box_extents = Vector3(0.6, 0.2, 1.2)
+	_fire.direction = Vector3.UP
+	_fire.spread = 15.0
+	_fire.gravity = Vector3(0, 2, 0)
+	_fire.initial_velocity_min = 1.5
+	_fire.initial_velocity_max = 3.0
+	_fire.scale_amount_min = 0.5
+	_fire.scale_amount_max = 1.2
+	var q := QuadMesh.new()
+	q.size = Vector2(0.6, 0.6)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.albedo_color = Color(1.0, 0.55, 0.15)
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.45, 0.1)
+	q.material = m
+	_fire.mesh = q
+	_fire.position = Vector3(0, 1.3, -1.0)
+	add_child(_fire)
+
+
+func _update_fire(delta: float) -> void:
+	if burning < 0.0 or wrecked:
+		return
+	burning -= delta
+	if burning < 0.0:
+		explode()
+
+
+func explode() -> void:
+	if wrecked:
+		return
+	wrecked = true
+	burning = -1.0
+	siren = false
+	controller = null
+	if _fire != null:
+		_fire.emitting = false
+	apply_central_impulse(Vector3(0, mass * 6.0, 0))
+	apply_torque_impulse(Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * mass * 2.0)
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		var dark := StandardMaterial3D.new()
+		dark.albedo_color = Color(0.13, 0.12, 0.11)
+		dark.roughness = 1.0
+		(mi as MeshInstance3D).material_override = dark
+	set_headlights(false)
+	exploded.emit(self)
+
+
+# ------------------------------------------------------------------ lights
+func set_headlights(on: bool) -> void:
+	on = on and not wrecked and (driven or controller != null)
+	if on and _lights.is_empty():
+		for x in [-0.6, 0.6]:
+			var l := SpotLight3D.new()
+			l.position = Vector3(x, 0.8, -2.2)
+			l.spot_range = 32.0
+			l.spot_angle = 32.0
+			l.light_energy = 2.2
+			l.light_color = Color(1.0, 0.96, 0.85)
+			add_child(l)
+			_lights.append(l)
+	for l in _lights:
+		l.visible = on
+
+
+func _add_beacon() -> void:
+	_beacon = MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.3, 0.12, 0.25)
+	_beacon.mesh = bm
+	_beacon.position = Vector3(-0.32, 1.55, 0.2)
+	add_child(_beacon)
+	var blue := _beacon.duplicate() as MeshInstance3D
+	blue.position.x = 0.32
+	add_child(blue)
+	for pair in [[_beacon, Color(1, 0.15, 0.2)], [blue, Color(0.2, 0.4, 1)]]:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = pair[1]
+		m.emission_enabled = true
+		m.emission = pair[1]
+		m.emission_energy_multiplier = 0.2
+		(pair[0] as MeshInstance3D).material_override = m
+		_beacon_mats.append(m)
 
 
 ## Fell out of the world or stuck on the roof: put it back on its wheels.
