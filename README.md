@@ -14,8 +14,13 @@ and is tagged `v0.1-2d` in Git.
   Temple of Justice, University of Liberia and JFK Medical Center. The city streams in around you.
 - **Traffic:** taxis, kekes, cars, SUVs, trucks and police patrols drive on the right, stop at
   traffic lights on the main roads, give way at other junctions, and honk if you block them.
-- **Cars:** take any car (pull the driver out), handbrake drifts, crash damage, fire and explosions,
-  headlights, an in-car radio with three stations, and drive-by shooting out of the side windows.
+- **Cars:** take any car (pull the driver out), a tyre model with real slides and power oversteer,
+  weight transfer and anti-roll bars, per-vehicle handling (a light, tippy keke; heavy trucks),
+  crash damage that dents the body where you hit, breaks headlights and knocks parts off, engine
+  smoke, fire and explosions, an in-car radio with three stations, and drive-by shooting.
+- **Physics:** people go limp (ragdolls) when hit and get up where they land; lamp posts and
+  street signs topple, bins, drums, crates and market stalls scatter; climb low walls; swim
+  (with limited breath) in the sea and the river.
 - **Police:** a wanted level of 1 to 5 stars. Cruisers route through the streets to you, officers
   chase you on foot and shoot from 2 stars. Lose them out of sight or at a respray shop. Get caught
   and you're **ARRESTED**; run out of health and you're **DOWN AND OUT**, waking at JFK Medical Center.
@@ -23,8 +28,23 @@ and is tagged `v0.1-2d` in Git.
 - **Missions:** Auntie Musu's 5-mission story, starting at Waterside (yellow M).
 - **Side jobs and daily life:** taxi fares to real named places, cookshops that heal you, keke and
   taxi rental, and a safehouse in Fiamah, Sinkor, where you sleep and save.
-- **World:** day and night with street lights and moonlight, rain, city ambience (markets, waves,
-  crickets at night), a minimap and a full map drawn from the real map data.
+- **World:** day and night with street lights and moonlight, drifting clouds, sunsets, stars,
+  rain that wets the streets (puddles, reflections), an animated sea with shore foam, swaying
+  palms, trees and grass, detailed buildings (zinc roofs with eaves, parapets, water tanks, AC
+  units, balconies, shopfronts with awnings and made-up business names), city ambience, a
+  minimap and a full map drawn from the real map data.
+
+## Graphics quality
+Settings → Display → Graphics quality. Measured on a GeForce GTX 760 at 1280 × 720 with
+V-sync off (`tests/perf_presets.gd`, on foot, driving, rain and night):
+
+| Preset | Renderer | Effects | Avg FPS | 1% low |
+|---|---|---|---|---|
+| Low | Compatibility (OpenGL) | no shadows, effects or grass | 178 | 109 |
+| Medium (default) | Forward+ (Vulkan) | shadows, ambient occlusion, glow, auto exposure, motion blur | 106 | 96 |
+| High | Forward+ (Vulkan) | + light bounce (SSIL), screen-space reflections, volumetric light shafts, longer view | 76 | 60 |
+
+Switching to or from Low changes the renderer, so the game asks for a restart.
 
 ## Play
 1. Install **Godot 4.7** (standard version) from https://godotengine.org/download.
@@ -73,10 +93,12 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs six checks: Godot import, start-up,
-the 2D game, the 3D district, the city streaming and a play-through of every game system (economy,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs seven checks: Godot import, start-up,
+the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
-shops, taxi, missions, police, arrest, hospital). It fails on any error or warning.
+shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
+damage, props, ragdolls, climbing, swimming). It fails on any error or warning.
+`tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout
 - `proto3d/main_city.tscn`, `main_city.gd` — the game; `proto3d/game/` — one script per system
