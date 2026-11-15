@@ -8,6 +8,7 @@ extends Node
 const MINUTES_PER_SECOND := 2.0
 const LAMP_LIGHTS := 10
 
+const PropsScript := preload("res://proto3d/props.gd")
 var state: GameState
 var sun: DirectionalLight3D
 var env: Environment
@@ -165,9 +166,16 @@ func _place_lamps() -> void:
 			l.light_energy = 0.0
 		return
 	var near: Array = []
+	var knocked: Array[Vector3] = PropsScript.Prop.knocked_lamps
 	for p in streamer.nearby(focus, 120.0, "lamps"):
 		var v := Vector3(p[0], p[1], p[2])
-		near.append([v.distance_squared_to(focus), v])
+		var dead := false
+		for k in knocked:
+			if k.distance_squared_to(v) < 1.0:
+				dead = true
+				break
+		if not dead:
+			near.append([v.distance_squared_to(focus), v])
 	near.sort_custom(func(a, b): return a[0] < b[0])
 	for i in _lamps.size():
 		var l := _lamps[i]

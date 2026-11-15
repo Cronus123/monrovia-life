@@ -124,6 +124,7 @@ func _ready() -> void:
 	add_child(player)
 	player.global_position = spawn
 	player.knocked.connect(func(impulse: Vector3): state.hurt(impulse.length() * 2.5))
+	player.drowning.connect(func(amount: float): state.hurt(amount))
 	effects.player = player
 	rig.follow(player, false)
 	await _prewarm()

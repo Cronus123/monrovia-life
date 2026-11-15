@@ -21,6 +21,9 @@ const CLOTH := ["#c8173a", "#1aa39e", "#f5c518", "#2b5fb3", "#ef7d22", "#7c3aed"
 const TROUSERS := ["#2b3a55", "#1b1b1b", "#4a4f57", "#6b5a3e", "#2f4a2f", "#d8cfbd"]
 
 static var _scenes := {}
+static var ragdolls_active := 0          # running ragdolls (capped for the CPU)
+static var max_ragdolls := 8             # Settings: fewer on Low
+const RagdollScript := preload("res://proto3d/ragdoll.gd")
 
 var rig: Node3D
 var skeleton: Skeleton3D
@@ -30,6 +33,8 @@ var playback: AnimationNodeStateMachinePlayback
 var _speed := 0.0
 var _outfit := {}
 var _extras: Array[MeshInstance3D] = []
+var ragdoll                              # ragdoll.gd, built on the first knock-down
+var _ragdolling := false
 
 
 ## Call before adding to the tree (walker.gd does), or later to recolour.
@@ -203,6 +208,54 @@ func _build_tree() -> void:
 	tree.active = true
 	playback = tree.get("parameters/playback")
 	tree.set("parameters/move/scale/scale", 1.0)
+
+
+## Knocked down: go limp (physics ragdoll) if one is free. Returns false if not (then
+## the fall animation plays instead).
+func start_ragdoll(impulse: Vector3) -> bool:
+	if _ragdolling:
+		ragdoll.start(impulse)
+		return true
+	if ragdolls_active >= max_ragdolls or skeleton == null:
+		return false
+	if ragdoll == null:
+		ragdoll = RagdollScript.new(skeleton)
+	ragdolls_active += 1
+	_ragdolling = true
+	ragdoll.start(impulse)
+	return true
+
+
+func is_ragdolling() -> bool:
+	return _ragdolling
+
+
+## Back to animation: the get-up starts from where the ragdoll lies, and the ragdoll
+## pose fades into it. Returns where the hips ended up and which way the head points.
+func end_ragdoll() -> Array:
+	if not _ragdolling:
+		return []
+	var hips: Vector3 = ragdoll.hips_position()
+	var head_dir := Vector3.ZERO
+	if ragdoll.bones.has("Head"):
+		head_dir = (ragdoll.bones["Head"] as Node3D).global_position - hips
+	head_dir.y = 0.0
+	_ragdolling = false
+	ragdolls_active = maxi(0, ragdolls_active - 1)
+	return [hips, head_dir]
+
+
+func blend_out_ragdoll(t: float) -> void:
+	if ragdoll != null:
+		if playback != null:
+			playback.start("get_up")
+		ragdoll.blend_out(t)
+
+
+func _exit_tree() -> void:
+	if _ragdolling:
+		_ragdolling = false
+		ragdolls_active = maxi(0, ragdolls_active - 1)
 
 
 ## Length of the fall/get-up animation (walker.gd uses it for timing).

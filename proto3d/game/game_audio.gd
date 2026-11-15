@@ -234,7 +234,9 @@ func _update_skid() -> void:
 		_skid.volume_db = -60.0
 		return
 	var side := absf(c.linear_velocity.dot(c.global_basis.x))
-	var hard := side > 3.0 or (Input.is_action_pressed("p3_jump") and absf(c.speed) > 6.0)
+	var slip: float = c.wheel_slip if "wheel_slip" in c else 0.0
+	side = maxf(side, slip * 10.0)
+	var hard := side > 3.0 or slip > 0.3 or (Input.is_action_pressed("p3_jump") and absf(c.speed) > 6.0)
 	if hard and not _skid.playing:
 		_skid.play()
 	_skid.global_position = c.global_position
@@ -298,3 +300,14 @@ func _update_ambience() -> void:
 		var pl: AudioStreamPlayer = _amb[k]
 		var target := linear_to_db(maxf(0.0001, float(levels[k]) * inside))
 		pl.volume_db = lerpf(pl.volume_db, target, 0.3)
+
+
+## Stop every player before quitting: a stream still playing at exit keeps its
+## playback (and the stream resource) alive in the audio server, which shows up as a leak.
+## (Cars carry their own engine and siren players, so search the whole game.)
+func _exit_tree() -> void:
+	var top: Node = get_parent() if get_parent() != null else self
+	for n in top.find_children("*", "", true, false):
+		if n is AudioStreamPlayer or n is AudioStreamPlayer3D:
+			n.stop()
+			n.stream = null

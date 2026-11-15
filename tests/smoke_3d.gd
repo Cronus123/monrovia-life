@@ -57,7 +57,7 @@ func _physics_process(_d: float) -> bool:
 			m.player.knockdown(Vector3(4, 0, 0))
 			check(m.player.is_down(), "player can be knocked down")
 		140:
-			check(m.player.body.current_state() == "knocked", "fall animation plays (%s)" % m.player.body.current_state())
+			check(m.player.body.is_ragdolling() or m.player.body.current_state() == "knocked", "player falls (ragdoll or fall animation)")
 		300:
 			check(not m.player.is_down(), "player gets back up")
 			var moved := 0

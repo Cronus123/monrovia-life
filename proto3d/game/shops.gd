@@ -201,8 +201,7 @@ func _respray() -> void:
 		state.say("A respray costs %s." % GameState.money_text(cost))
 		return
 	var car = main.car
-	car.damage = 0.0
-	car.burning = -1.0
+	car.repair()
 	if car.kind not in ["taxi", "keke", "police"]:
 		var col := Color.from_hsv(randf(), 0.6, 0.8)
 		for mi in car.model.find_children("*", "MeshInstance3D", true, false):

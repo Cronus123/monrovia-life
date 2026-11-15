@@ -45,9 +45,12 @@ func is_down() -> bool:
 func knockdown(impulse: Vector3) -> void:
 	if knocked_t > GET_UP_TIME:
 		return
-	knocked_t = KNOCK_TIME + GET_UP_TIME
 	knocked.emit(impulse)
 	velocity = impulse + Vector3(0, minf(4.5, impulse.length() * 0.35), 0)
+	if body.start_ragdoll(velocity):
+		knocked_t = KNOCK_TIME + GET_UP_TIME
+		return
+	knocked_t = KNOCK_TIME + GET_UP_TIME
 	if impulse.length() > 0.5:
 		body.rotation.y = atan2(impulse.x, impulse.z)   # face the car: falls on the back
 	body.play("knocked")
@@ -77,7 +80,9 @@ func walk(wish: Vector3, accel: float, delta: float) -> void:
 		if is_on_floor():
 			velocity.x = move_toward(velocity.x, 0.0, 9.0 * delta)
 			velocity.z = move_toward(velocity.z, 0.0, 9.0 * delta)
-		if knocked_t <= GET_UP_TIME and body.current_state() == "knocked":
+		if knocked_t <= GET_UP_TIME and body.is_ragdolling():
+			_get_up_from_ragdoll()
+		elif knocked_t <= GET_UP_TIME and body.current_state() == "knocked":
 			body.play("get_up")
 	else:
 		velocity.x = move_toward(velocity.x, wish.x, accel * delta)
@@ -98,6 +103,23 @@ func walk(wish: Vector3, accel: float, delta: float) -> void:
 	if global_position.y < -12.0:
 		global_position = spawn_point
 		velocity = Vector3.ZERO
+
+
+## Move the (invisible) capsule to where the ragdoll came to rest, turn the body so the
+## get-up animation starts lying the same way, then blend the pose into it.
+func _get_up_from_ragdoll() -> void:
+	var r: Array = body.end_ragdoll()
+	if r.is_empty():
+		return
+	var hips: Vector3 = r[0]
+	var head_dir: Vector3 = r[1]
+	var to := Vector3(hips.x, global_position.y, hips.z)
+	if not test_move(global_transform, to - global_position):
+		global_position = to
+	velocity = Vector3.ZERO
+	if head_dir.length() > 0.1:
+		body.global_rotation.y = atan2(head_dir.x, head_dir.z)
+	body.blend_out_ragdoll(0.45)
 
 
 func _try_step(dir: Vector3) -> void:

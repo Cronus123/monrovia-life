@@ -636,7 +636,7 @@ def main():
                               "Buildings-col": Mesh(), "Props": Mesh(), "Details": Mesh(),
                               "Foliage": Mesh()})
     lo = defaultdict(lambda: {"Lo": Mesh()})
-    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": [], "lamps": [], "shops": [], "grass": [], "trees": []})
+    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": [], "lamps": [], "shops": [], "grass": [], "trees": [], "poles": [], "props": []})
     graph_ways = []      # for the traffic road graph
     building_rings = []  # for the minimap
     UP = (0, 1, 0)
@@ -782,10 +782,21 @@ def main():
                         tk = tile_of(*e[2])
                         x, y = e[1][0] - e[4] * 0.4, e[1][1] - e[5] * 0.4
                         if kind in MAJOR and k % 9 == 4 and side == (1 if (k // 9) % 2 == 0 else -1):
-                            _lamp(hi[tk]["Props"], x, y, e[3] + 0.15, -e[4], -e[5])
+                            # knock-over lamp posts are built by the game (props.gd)
+                            meta[tk]["poles"].append([round(x, 2), round(e[3] + 0.15, 2), round(-y, 2), round(math.atan2(e[4], -e[5]), 3)])
                             meta[tk]["lamps"].append([round(x - e[4] * 1.6, 2), round(e[3] + 6.6, 2), round(-(y - e[5] * 1.6), 2)])
                         if kind in ("trunk", "primary", "secondary") and k % 7 == 2 and hsh(x, y) < 0.5:
                             meta[tk]["trees"].append([round(x, 2), round(e[3] + 0.15, 2), round(-y, 2), 0, round(hsh(x, y, 3), 2)])
+                        # street furniture the game spawns as physics props
+                        dt = DOWNTOWN[0] < x < DOWNTOWN[1] and DOWNTOWN[2] < y < DOWNTOWN[3]
+                        bx, by = e[1][0] - e[4] * 0.55, e[1][1] - e[5] * 0.55
+                        yaw = round(math.atan2(e[4], -e[5]), 3)
+                        u = hsh(int(bx * 3), int(by * 3), 31)
+                        if k % 6 == 3 and u < (0.55 if dt else 0.3):
+                            pk = "bin" if u < 0.25 else ("drum" if u < 0.4 else "crate")
+                            meta[tk]["props"].append([round(bx, 2), round(e[3] + 0.17, 2), round(-by, 2), pk, yaw])
+                        elif k % 13 == 8 and (dt or kind in MAJOR) and u < (0.6 if dt else 0.2):
+                            meta[tk]["props"].append([round(bx, 2), round(e[3] + 0.17, 2), round(-by, 2), "stall", yaw])
                         if kind in ("residential", "unclassified", "tertiary") and k % 5 == 2 and hsh(x, y, 9) < 0.18:
                             px, py = e[0][0] - e[4] * 1.3, e[0][1] - e[5] * 1.3
                             heading = math.atan2(-e[5], -e[4]) if side > 0 else math.atan2(e[5], e[4])

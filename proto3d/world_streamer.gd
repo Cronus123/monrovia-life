@@ -16,6 +16,7 @@ var detail_range := 260.0       # building details fade out beyond this (Setting
 const MAX_JOBS := 3
 const ATTACH_PER_FRAME := 2
 const SHADER := preload("res://proto3d/city_surfaces.gdshader")
+const PropsScript := preload("res://proto3d/props.gd")
 
 var manifest: Dictionary
 var tile_size := 256.0
@@ -363,6 +364,7 @@ func _add_plants(tile: Node3D, meta: Dictionary) -> void:
 func _add_signs(tile: Node3D, meta: Dictionary) -> void:
 	_add_grass(tile, meta)
 	_add_plants(tile, meta)
+	PropsScript.spawn(tile, meta, _mats["Glow"], _mats["Props"])
 	# shop names on the signboards over shopfronts (made-up businesses)
 	for s in meta.get("shops", []):
 		var lab := Label3D.new()
@@ -379,8 +381,10 @@ func _add_signs(tile: Node3D, meta: Dictionary) -> void:
 		tile.add_child(lab)
 	var green := _sign_mat()
 	for s in meta.get("signs", []):
-		var post := Node3D.new()
+		# a break-away post: stands until a car knocks it over
+		var post: RigidBody3D = PropsScript._body(true, 30.0)
 		post.position = Vector3(s[0] + 5.0, s[1], s[2] + 5.0)
+		PropsScript._shape(post, Vector3(0.12, 3.2, 0.12), Vector3(0, 1.6, 0))
 		tile.add_child(post)
 		var pole := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
