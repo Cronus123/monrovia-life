@@ -27,6 +27,12 @@ var mission_idx := 0
 var time_min := 9.0 * 60.0              # game minutes since day 1, 00:00
 var rain_from := -1.0
 var rain_until := -1.0
+# Big Talk Dweh's story (big_talk.gd)
+var bt_stage := 0                       # 0..4: nobody, radio, campaign, big man, scandal
+var bt_done: Array = []                 # finished job ids
+var bt_posters: Array = []              # indices of posters the player pasted
+var bt_crossed := false                 # the player crossed him (he holds a grudge)
+var bt_ending := ""                     # "", "expose" or "senator"
 
 
 func day() -> int:
@@ -153,7 +159,8 @@ func set_stars(n: int) -> void:
 # ------------------------------------------------------------------ save data
 func to_dict() -> Dictionary:
 	return {"money": money, "health": health, "armor": armor, "has_pistol": has_pistol, "ammo": ammo,
-		"weapon": weapon, "mission_idx": mission_idx, "time_min": time_min}
+		"weapon": weapon, "mission_idx": mission_idx, "time_min": time_min,
+		"bt_stage": bt_stage, "bt_done": bt_done, "bt_posters": bt_posters, "bt_crossed": bt_crossed, "bt_ending": bt_ending}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -165,6 +172,13 @@ func from_dict(d: Dictionary) -> void:
 	weapon = int(d.get("weapon", FISTS)) if has_pistol else FISTS
 	mission_idx = int(d.get("mission_idx", 0))
 	time_min = float(d.get("time_min", 540.0))
+	bt_stage = int(d.get("bt_stage", 0))
+	bt_done = Array(d.get("bt_done", []))
+	bt_posters = []
+	for i in d.get("bt_posters", []):
+		bt_posters.append(int(i))
+	bt_crossed = bool(d.get("bt_crossed", false))
+	bt_ending = String(d.get("bt_ending", ""))
 	stars = 0
 	money_changed.emit(money)
 	health_changed.emit(health, armor)

@@ -14,6 +14,7 @@ const PedScript := preload("res://proto3d/pedestrian.gd")
 const CarScript := preload("res://proto3d/car.gd")
 const RigScript := preload("res://proto3d/camera_rig.gd")
 const StreamerScript := preload("res://proto3d/world_streamer.gd")
+const BigTalkScript := preload("res://proto3d/game/big_talk.gd")
 const CAR_MODELS := {
 	"taxi": preload("res://proto3d/models/veh_taxi.glb"), "car": preload("res://proto3d/models/veh_car.glb"),
 	"suv": preload("res://proto3d/models/veh_suv.glb"), "police": preload("res://proto3d/models/veh_police.glb"),
@@ -55,6 +56,7 @@ var taxi := TaxiJob.new()
 var missions := Missions.new()
 var hud := GameHud.new()
 var audio := GameAudio.new()
+var big_talk = BigTalkScript.new()     # Big Talk Dweh, the (fictional) politician's storyline
 var signals := TrafficSignals.new()
 var settings := GameSettings.new()
 var settings_menu := SettingsMenu.new()
@@ -113,6 +115,10 @@ func _ready() -> void:
 	audio.process_mode = Node.PROCESS_MODE_ALWAYS
 	audio.setup(self)
 	effects.audio = audio
+	big_talk.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(big_talk)
+	big_talk.setup(state, self, shops, police)
+	missions.mission_passed.connect(func(_i): big_talk._try_advance())
 	effects.cash_picked.connect(func(n: int): state.add_money(n); state.say("+" + GameState.money_text(n), Color("#f5c518"), 1.5))
 	state.player_down.connect(down_and_out)
 	police.arrested.connect(arrested)
@@ -611,6 +617,8 @@ func heading() -> float:
 func target_pos():
 	if missions.active():
 		return missions.target()
+	if big_talk.active():
+		return big_talk.target()
 	if taxi.hire:
 		return taxi.target()
 	return missions.target()
@@ -619,6 +627,8 @@ func target_pos():
 func objective_text() -> String:
 	if missions.active():
 		return missions.objective()
+	if big_talk.active() or big_talk.blocks_missions():
+		return big_talk.objective()
 	if taxi.hire:
 		return taxi.objective()
 	return missions.objective()
@@ -628,6 +638,9 @@ func prompt_text() -> String:
 	if hud.menu_open or hud.map_open or not ready_done:
 		return ""
 	var s := shops.prompt()
+	if s != "":
+		return s
+	s = big_talk.prompt()
 	if s != "":
 		return s
 	if car != null:
@@ -710,7 +723,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				c = traffic.nearest_to(player.global_position, ENTER_RANGE + 0.6)
 			begin_enter(c)
 	elif event.is_action_pressed("p3_use"):
-		if not shops.interact() and car == null:
+		if not shops.interact() and not big_talk.interact() and car == null:
 			_talk()
 	elif event.is_action_pressed("p3_hire"):
 		taxi.toggle()
@@ -733,7 +746,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _talk() -> void:
 	for p in peds:
 		if p.global_position.distance_to(player.global_position) < 1.8 and not p.is_down():
-			state.say("\"%s\"" % LINES[_rng.randi() % LINES.size()], Color("#f5e9b0"), 3.2)
+			var line: String = big_talk.street_line() if _rng.randf() < 0.4 else ""
+			if line == "":
+				line = LINES[_rng.randi() % LINES.size()]
+			state.say("\"%s\"" % line, Color("#f5e9b0"), 3.2)
 			return
 
 

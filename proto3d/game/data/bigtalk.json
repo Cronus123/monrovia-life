@@ -1,0 +1,160 @@
+{
+ "_comment": "Honourable Kpakolo 'Big Talk' Dweh: an ORIGINAL fictional character (not based on any real person) and his fictional party. Read by proto3d/game/big_talk.gd. Stages advance when the stage's jobs are done AND the player's story (Auntie Musu missions passed) has reached 'story'. Step types: posters, goto, scare_crew, cash_run, final_choice. Places are ids in proto3d/city/places.json or spots in bigtalk_spots.json (crate, billboard, rally, crew, house, statue).",
+ "name": "Kpakolo \"Big Talk\" Dweh",
+ "short": "Big Talk",
+ "party": "Big Talk Progress Party",
+ "slogan": "MORE TALK, MORE PROGRESS!",
+ "model": "OldClassy_Male",
+ "skin": "#4a2e1e",
+ "stages": [
+  {
+   "id": "nobody", "title": "Nobody", "story": 0,
+   "where": "crate",
+   "look": {"suit": "#6b5a3e", "shirt": "#d8cfbd", "shine": 0.15, "watch": 1.0, "hat": false, "glasses": true},
+   "props": ["crate"],
+   "lines": [
+    "You see me? I am the development!",
+    "Small boy, move your keke before I buy the road.",
+    "Ehn I tell you? Money talk, poor people listen!",
+    "Today crate, tomorrow Capitol! Write it down!",
+    "My suit small because my future too big to fit inside!",
+    "Who say I don't have money? My money just shy, it hiding."
+   ],
+   "jobs": ["posters"]
+  },
+  {
+   "id": "radio", "title": "Radio Mouth", "story": 1,
+   "where": "billboard",
+   "look": {"suit": "#7a1f2b", "shirt": "#ffffff", "shine": 0.3, "watch": 1.4, "hat": false, "glasses": true},
+   "props": ["billboard"],
+   "lines": [
+    "Your mouth too small to talk to Honourable.",
+    "Call the radio, ask for me. I am the number one caller and the number one answer!",
+    "They say talk is cheap. Not my own. My own get price.",
+    "I will put light in every street. First my street, then my brother street, then we see.",
+    "You hear me on the radio this morning? Of course you hear me. Everybody hear me."
+   ],
+   "jobs": ["tape"]
+  },
+  {
+   "id": "campaign", "title": "The Campaign", "story": 2,
+   "where": "rally",
+   "look": {"suit": "#1d4fa8", "shirt": "#f5c518", "shine": 0.55, "watch": 1.9, "hat": true, "glasses": true},
+   "props": ["billboard", "rally", "convoy"],
+   "lines": [
+    "Vote for me, I will fix the potholes - after I finish building my house.",
+    "Take your rice, take your T-shirt, and don't forget whose face is on it!",
+    "Big Talk Progress Party: we talk, and we keep talking!",
+    "My opponent got plan. I got loudspeaker. Which one you hearing?",
+    "Who need manifesto when you got me?"
+   ],
+   "jobs": ["rival_crew", "cash_run"]
+  },
+  {
+   "id": "bigman", "title": "Big Man", "story": 3,
+   "where": "house",
+   "look": {"suit": "#f2efe6", "shirt": "#1b1b1b", "shine": 0.7, "watch": 2.6, "hat": true, "glasses": true},
+   "props": ["billboard", "house", "guards", "city_posters"],
+   "guards": 2,
+   "lines": [
+    "Look at my house. You see development? I told you.",
+    "My bodyguards got bodyguards.",
+    "The road to my gate smooth. Your own road? Patience is a virtue.",
+    "I don't sweat. Sweating is for people who don't have generator.",
+    "Ehn I tell you? Money talk, poor people listen!"
+   ],
+   "crossed_lines": [
+    "You cross me? In this town? My people know your face now.",
+    "Small boy, you want trouble or you want to apologise with money?"
+   ],
+   "jobs": ["meeting"]
+  },
+  {
+   "id": "scandal", "title": "The Scandal", "story": 4,
+   "where": "house",
+   "look": {"suit": "#c9a227", "shirt": "#ffffff", "shine": 0.85, "watch": 3.2, "hat": true, "glasses": true},
+   "props": ["billboard", "house", "guards", "city_posters"],
+   "guards": 3,
+   "lines": [
+    "Election tomorrow. After that, I will remember my friends. Maybe.",
+    "Somebody say money missing from the road fund. Money don't go missing. It go travelling.",
+    "You are either with Big Talk or you are walking."
+   ],
+   "jobs": ["finale"]
+  }
+ ],
+ "jobs": {
+  "posters": {
+   "title": "Paste the Posters", "reward": 600,
+   "intro": "Small boy! You want work? Take these posters. Paste my fine face on six walls around downtown. Don't let it rain on them.",
+   "steps": [{"type": "posters", "set": "posters", "text": "Paste Big Talk's posters on the marked walls (%d left)."}]
+  },
+  "tape": {
+   "title": "Hot Pepper FM", "reward": 900,
+   "intro": "I recorded my programme. Carry this tape to Hot Pepper FM on Crown Hill before the 6 o'clock news. The people are waiting for my wisdom.",
+   "steps": [{"type": "goto", "target": "crown_hill", "timer": 180, "text": "Get Big Talk's tape to Hot Pepper FM on Crown Hill."}],
+   "done_say": "From today, tune in to the Big Talk Hour on your car radio (R)."
+  },
+  "rival_crew": {
+   "title": "Poster War", "reward": 1500, "cross_on_fail": true,
+   "intro": "The Clean Hands Movement boys are pasting their posters over my own downtown. Go and chase them off. Don't kill nobody - just make them run.",
+   "steps": [{"type": "scare_crew", "spot": "crew", "count": 3, "text": "Chase off the rival poster crew downtown (%d left). Get close or knock them down."}]
+  },
+  "cash_run": {
+   "title": "Campaign Cash", "reward": 2500, "cross_on_fail": true,
+   "intro": "My campaign money is at Waterside. Bring it to my rally in Sinkor. If the police see you, they will ask questions - so don't let them see you.",
+   "steps": [
+    {"type": "goto", "target": "crate", "text": "Pick up the campaign cash at Waterside."},
+    {"type": "cash_run", "target": "rally", "timer": 300, "spot_range": 28.0, "stars": 2, "text": "Bring the cash to Big Talk's rally in Sinkor. Avoid the police!", "on_start": "Cash in the bag. Keep away from police cars."}
+   ]
+  },
+  "meeting": {
+   "title": "Come to the House", "reward": 1000,
+   "intro": "Come see my new house in Sinkor. We need to talk about the election.",
+   "steps": [{"type": "goto", "target": "house", "text": "Visit Big Talk's walled house in Sinkor (off 16th Street)."}]
+  },
+  "finale": {
+   "title": "Election Night", "reward": 0,
+   "intro": "Election is tomorrow. My people say somebody has my road-fund ledger. You will help me finish this... or you think you better than me?",
+   "steps": [{"type": "final_choice", "text": "Decide Big Talk's fate."}],
+   "choices": [
+    {"id": "expose", "label": "Expose the stolen road fund", "reward": 12000,
+     "steps": [
+      {"type": "goto", "target": "house", "text": "Take the road-fund ledger from Big Talk's house."},
+      {"type": "cash_run", "target": "police_hq", "timer": 240, "spot_range": 0.0, "goons": true, "stars": 0, "text": "Get the ledger to the National Police HQ before his people stop you!", "on_start": "You have the ledger. His bodyguards are coming!"}
+     ],
+     "ending": "Big Talk Dweh is arrested. His posters are coming down all over Monrovia."},
+    {"id": "senator", "label": "Help him win", "reward": 25000,
+     "steps": [
+      {"type": "goto", "target": "rally", "text": "Collect the 'extra' ballot boxes at the Sinkor rally ground."},
+      {"type": "cash_run", "target": "capitol", "timer": 240, "spot_range": 28.0, "stars": 3, "text": "Deliver the ballot boxes to Capitol Hill. Avoid the police!"}
+     ],
+     "ending": "Senator Kpakolo Dweh wins. He thanks 'the people' from a gold statue in Sinkor."}
+   ]
+  }
+ },
+ "endings": {
+  "expose": {
+   "big_talk_lines": ["This is politics! They framing me! ...Officer, you like watch?"],
+   "street_lines": ["You see how they carry Big Talk to jail?", "No more loudspeaker by Waterside, thank God.", "The road fund was in his house the whole time!", "Somebody tell Big Talk his suit was too small anyway."]
+  },
+  "senator": {
+   "big_talk_lines": ["Senator Dweh! Say it slowly. Enjoy it.", "I promised development. Look - a statue! Of me! Development!"],
+   "street_lines": ["Senator Dweh fix nothing oh, but the statue fine.", "Big Talk is Senator now? Lord, hold my keke.", "They say the potholes are 'under review'.", "Every wall in Sinkor got that man face on it."]
+  }
+ },
+ "street_lines": ["You hear Big Talk on the radio? That man mouth never tired.", "Big Talk Progress Party gave me rice. I still not voting for him.", "Who put that man face on my shop?", "Big Talk say he will fix the road. Which road?"],
+ "radio": {
+  "station": "Big Talk Hour",
+  "rants": [
+   "Good evening Monrovia, this is your Honourable speaking, the voice of development!",
+   "Caller say the potholes too deep. My friend, deep pothole is a swimming pool for the economy!",
+   "They ask me where my plan is. I say: my plan is in my mouth, and my mouth is open!",
+   "Ehn I tell you? Money talk, poor people listen! Now listen.",
+   "Small boy call in, say I'm all talk. Small boy, talk is my profession!",
+   "Vote Big Talk Progress Party. More talk, more progress!",
+   "Next caller. ...Hello? ...They hang up. That one is the opposition."
+  ]
+ },
+ "rival_party": "Clean Hands Movement"
+}

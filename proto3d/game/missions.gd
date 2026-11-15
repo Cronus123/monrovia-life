@@ -50,7 +50,13 @@ func active() -> bool:
 
 
 func available() -> bool:
-	return not active() and state.mission_idx < list.size()
+	return not active() and state.mission_idx < list.size() and not _blocked()
+
+
+## Big Talk's boys keep Auntie Musu's jobs closed while you're on his bad side.
+func _blocked() -> bool:
+	var bt = main.get("big_talk") if main != null else null
+	return bt != null and bt.state != null and bt.blocks_missions()
 
 
 func step() -> Dictionary:
@@ -62,6 +68,9 @@ func prompt() -> String:
 
 
 func open_menu() -> void:
+	if not active() and _blocked():
+		main.hud.open_menu("Auntie Musu", "\"Kollie, Big Talk's boys are standing by my table. I can't give you work until you settle with that man.\"", [], func(_i): pass)
+		return
 	if state.mission_idx >= list.size():
 		main.hud.open_menu("Auntie Musu", "\"You did it, Kollie. Monrovia knows your name now. Go enjoy the city.\"", [], func(_i): pass)
 		return

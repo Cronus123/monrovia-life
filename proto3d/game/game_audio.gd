@@ -18,13 +18,14 @@ const STATIONS := [["radio_highlife", "Highlife 98.1"], ["radio_hipco", "Hipco B
 const ALL := ["engine_car", "engine_keke", "engine_truck", "horn_car", "horn_keke", "siren", "skid", "crash",
 	"explosion", "gunshot", "punch", "step_hard_1", "step_hard_2", "step_soft_1", "step_soft_2", "door", "cash",
 	"ui_click", "ui_confirm", "amb_city_day", "amb_city_night", "amb_market", "amb_waves", "amb_rain",
-	"music_menu", "radio_highlife", "radio_hipco", "radio_palmwine"]
+	"music_menu", "radio_highlife", "radio_hipco", "radio_palmwine", "radio_bigtalk", "bigtalk_shout"]
 const LOOPS := ["engine_car", "engine_keke", "engine_truck", "siren", "skid", "amb_city_day", "amb_city_night",
-	"amb_market", "amb_waves", "amb_rain", "music_menu", "radio_highlife", "radio_hipco", "radio_palmwine"]
+	"amb_market", "amb_waves", "amb_rain", "music_menu", "radio_highlife", "radio_hipco", "radio_palmwine", "radio_bigtalk"]
 
 var main                          # main_city.gd
 var streams := {}
-var station := 0                  # 0 = radio off, 1..3 = stations
+var station := 0                  # 0 = radio off, 1.. = stations
+var stations: Array = STATIONS.duplicate()   # Big Talk adds his talk show here (big_talk.gd)
 var _pool: Array[AudioStreamPlayer3D] = []
 var _next := 0
 var _ui: AudioStreamPlayer
@@ -132,8 +133,22 @@ func set_music(name: String, from_position: float = 0.0) -> void:
 
 
 func next_station() -> String:
-	station = (station + 1) % (STATIONS.size() + 1)
-	return "Radio off" if station == 0 else String(STATIONS[station - 1][1])
+	station = (station + 1) % (stations.size() + 1)
+	return "Radio off" if station == 0 else String(stations[station - 1][1])
+
+
+## The station playing now ("" when the radio is off or you're on foot).
+func station_stream() -> String:
+	return String(stations[station - 1][0]) if main != null and main.car != null and station > 0 and station <= stations.size() else ""
+
+
+func set_talk_station(on: bool, stream: String, title: String) -> void:
+	var has := stations.any(func(st): return st[0] == stream)
+	if on and not has:
+		stations.append([stream, title])
+	elif not on and has:
+		stations = stations.filter(func(st): return st[0] != stream)
+		station = mini(station, stations.size())
 
 
 func _update_music() -> void:
@@ -141,7 +156,7 @@ func _update_music() -> void:
 		set_music("music_menu")
 		return
 	if main.car != null and station > 0:
-		var nm: String = STATIONS[station - 1][0]
+		var nm: String = stations[mini(station, stations.size()) - 1][0]
 		# a real broadcast: tune in mid-song, wherever the station has got to
 		var length := (streams[nm] as AudioStream).get_length() if streams.has(nm) else 60.0
 		set_music(nm, fmod(Time.get_ticks_msec() / 1000.0, length))

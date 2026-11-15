@@ -9,6 +9,10 @@ Output: proto3d/audio/*.wav (22.05 kHz, 16-bit mono; Godot compresses them on im
                punch, step_hard_1/2, step_soft_1/2, door, cash, ui_click, ui_confirm
     Ambience:  amb_city_day, amb_city_night, amb_market, amb_waves, amb_rain (seamless loops)
     Music:     music_menu (calm theme), radio_highlife, radio_hipco, radio_palmwine (loops)
+    Voice:     radio_bigtalk (the Big Talk Hour: a jingle and a ranting talk-show voice, loop),
+               bigtalk_shout (loudspeaker shouting) - wordless, voice-like babble
+
+Only some:  ... make_audio.py radio_bigtalk bigtalk_shout
 
 Run (needs Python 3 + numpy; Blender's bundled Python has both):
     "C:\\Program Files\\Blender Foundation\\Blender 5.3\\5.3\\python\\bin\\python.exe" -I tools\\make_audio.py
@@ -387,7 +391,95 @@ def song(bpm, bars, progression, style, seed):
     return loop
 
 
+# ------------------------------------------------------------------ voice
+def babble(sec, seed, pitch=130.0, excited=0.5):
+    """Wordless speech: a glottal buzz with a rising/falling pitch contour per phrase,
+    shaped into syllables, through two moving formant bands (vowels), with short
+    consonant noise bursts and pauses between phrases."""
+    r = np.random.default_rng(seed)
+    n = int(sec * SR)
+    out = np.zeros(n)
+    t = 0.0
+    while t < sec - 0.5:
+        words = r.integers(3, 9)
+        phrase_len = 0.0
+        sylls = []
+        for _ in range(words * 2):
+            d = r.uniform(0.09, 0.2)
+            sylls.append(d)
+            phrase_len += d + (r.uniform(0.03, 0.09) if r.random() < 0.4 else 0.0)
+        m = int(min(phrase_len, sec - t) * SR)
+        if m <= 0:
+            break
+        tt = np.arange(m) / SR
+        contour = pitch * (1.0 + excited * 0.35 * np.sin(np.pi * tt / max(phrase_len, 0.1)) + 0.06 * np.sin(2 * np.pi * 5.5 * tt))
+        phase = np.cumsum(contour) / SR
+        buzz = (2 * (phase % 1.0) - 1.0) ** 3 + 0.4 * np.sin(2 * np.pi * phase)
+        amp = np.zeros(m)
+        f1 = np.zeros(m)
+        pos = 0.0
+        for d in sylls:
+            a, b = int(pos * SR), int((pos + d) * SR)
+            if a >= m:
+                break
+            b = min(b, m)
+            k = b - a
+            amp[a:b] = np.sin(np.linspace(0, np.pi, k)) ** 0.6
+            f1[a:b] = r.choice([500, 700, 900, 1200, 400])
+            pos += d + (r.uniform(0.03, 0.09) if r.random() < 0.4 else 0.0)
+        voiced = buzz * amp
+        v = bandpass(voiced, 250, 1100) + 0.6 * bandpass(voiced, 1400, 2800)
+        cons = noise(m) * (amp < 0.15) * (amp > 0.0)
+        v += 0.25 * highpass(cons, 2500)
+        i = int(t * SR)
+        out[i:i + m] += v[: n - i]
+        t += phrase_len + r.uniform(0.25, 0.7)
+    return out
+
+
+def loudspeaker(x):
+    """Cheap megaphone: band-limited and clipped."""
+    y = bandpass(x, 450, 3200)
+    y = np.tanh(norm(y, 1.0) * 3.0)
+    return y
+
+
+def jingle():
+    tt = t_axis(2.2)
+    out = np.zeros(len(tt))
+    for i, f in enumerate([523.25, 659.25, 783.99, 1046.5]):
+        place(out, np.sin(2 * np.pi * f * t_axis(0.5)) * env(int(0.5 * SR), 0.005, 0.25), 0.18 * i, 0.6)
+    place(out, np.sin(2 * np.pi * 1046.5 * t_axis(1.0)) * env(int(1.0 * SR), 0.01, 0.6), 0.75, 0.5)
+    return out
+
+
+def bigtalk_radio(sec=48.0):
+    """The Big Talk Hour: jingle, then his voice (radio-EQ'd) with a quiet bed."""
+    n = int(sec * SR)
+    out = np.zeros(n)
+    place(out, jingle(), 0.0, 0.8)
+    v = babble(sec - 3.0, 77, pitch=118.0, excited=0.9)
+    v = bandpass(v, 200, 3800)
+    place(out, v, 2.6, 1.0)
+    bed = lowpass(noise(n), 300) * 0.04
+    return loopify(out + bed, 0.5)
+
+
+def bigtalk_shout(sec=3.2):
+    return loudspeaker(babble(sec, 91, pitch=150.0, excited=1.0))
+
+
+NEW = {"radio_bigtalk": (bigtalk_radio, 0.8), "bigtalk_shout": (bigtalk_shout, 0.8)}
+
+
 def main():
+    import sys
+    only = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if only:
+        for name in only:
+            fn, peak = NEW[name]
+            save(name, fn(), peak)
+        return
     print("SFX")
     save("engine_car", engine(48.0, 6, 0.5), 0.8)
     save("engine_keke", engine(36.0, 9, 1.4) + 0.3 * engine(72.0, 4, 0.8), 0.8)
@@ -419,6 +511,9 @@ def main():
     save("radio_highlife", song(124, 32, ["C", "F", "G", "C", "Am", "F", "G", "C"], "highlife", 7), 0.8)
     save("radio_hipco", song(96, 24, ["Am", "F", "C", "G"], "hipco", 9), 0.8)
     save("radio_palmwine", song(88, 24, ["C", "F", "C", "G"], "palmwine", 11), 0.75)
+    print("Voice")
+    for name, (fn, peak) in NEW.items():
+        save(name, fn(), peak)
     print("done ->", OUT)
 
 
