@@ -27,7 +27,10 @@ and is tagged `v0.1-2d` in Git.
 - **Weapons:** fists (three-hit combos), baseball bat, machete, pistol, SMG and shotgun, with
   magazines and reloads (R), aiming over the shoulder (right mouse), recoil, muzzle flash and
   shell casings; a weapon wheel (hold Tab or LB: slow motion while you choose) and an ammo display.
-  Weapon shops sell all of them, plus body armour. Dodge roll on C.
+  Weapon shops sell all of them, plus body armour. Dodge roll on C, crouch on Ctrl.
+- **Animation:** Quaternius's Universal Animation Library retargeted onto the characters: smoother
+  walking, jogging and sprinting, crouching, swimming, two-handed aiming that follows the camera up
+  and down, upper-body reloads while moving, jab/cross/hook punch combos and hit reactions.
 - **Missions:** Auntie Musu's 5-mission story, starting at Waterside (yellow M).
 - **Big Talk Dweh:** Honourable Kpakolo "Big Talk" Dweh, an original fictional loudmouth who goes
   from shouting on a crate at Waterside to a radio show, a campaign (convoy, rallies, rice and

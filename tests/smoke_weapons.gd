@@ -178,6 +178,34 @@ func run() -> void:
 	m.police.clear()
 	m.police.remove_all()
 
+	print("animation")
+	var body = m.player.body
+	await seconds(1.0)                     # let the last punch of the combo finish
+	check(body.anim_player.has_animation("ual/Walk") and body.anim_player.has_animation("ual/Pistol_Aim_Neutral"), "the Universal Animation Library is loaded on the characters")
+	check(m.peds.size() > 0 and m.peds[0].body.anim_player.has_animation("ual/Jog_Fwd"), "pedestrians use it too")
+	Input.action_press("p3_crouch")
+	await physics_frame
+	await physics_frame
+	Input.action_release("p3_crouch")
+	await seconds(0.3)
+	check(m.player.crouching and int(body.tree.get("parameters/move/stance/current_index")) == 1, "Ctrl crouches")
+	Input.action_press("p3_crouch")
+	await physics_frame
+	await physics_frame
+	Input.action_release("p3_crouch")
+	await seconds(0.2)
+	check(not m.player.crouching, "and stands up again")
+	st.give_weapon(GameState.PISTOL, 30)
+	st.clip[GameState.PISTOL] = 3
+	w.start_reload()
+	await seconds(0.2)
+	check(bool(body.tree.get("parameters/move/reload/active")), "reloading plays the upper-body reload")
+	await until(func(): return w.reloading <= 0.0, 3.0)
+	Input.action_press("p3_aim")
+	await seconds(0.5)
+	check(float(body.tree.get("parameters/move/aim/blend_amount")) > 0.9, "aiming raises the gun in both hands")
+	Input.action_release("p3_aim")
+
 	print("shop and saves")
 	st.lose_weapons()
 	st.add_money(10000)

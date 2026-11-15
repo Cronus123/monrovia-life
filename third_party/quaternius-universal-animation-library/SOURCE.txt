@@ -1,0 +1,4 @@
+Universal Animation Library [Standard] by Quaternius - CC0 1.0.
+Source: https://quaternius.itch.io/universal-animation-library (free Standard download), 2026-11-15.
+proto3d/models/ual/UAL1_Standard.glb is the "Unreal-Godot" export from that zip; tools/retarget_ual.gd retargets
+its animations onto the Ultimate Animated Character Pack skeleton (proto3d/models/people/ual_anims.res).

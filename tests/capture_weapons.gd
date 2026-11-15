@@ -94,6 +94,25 @@ func run() -> void:
 	m.weapons.try_fire()
 	await seconds(0.32)
 	await snap("swing_bat")
+	# crouched, aiming the pistol, seen from the side
+	await seconds(1.5)
+	st.select_weapon(GameState.PISTOL)
+	m.player.crouching = true
+	m.player.body.set_stance("crouch")
+	Input.action_press("p3_aim")
+	await seconds(0.8)
+	var pp: Vector3 = m.player.global_position
+	var ff: Vector3 = Basis(Vector3.UP, m.player.model.rotation.y) * Vector3.FORWARD
+	var rr: Vector3 = Basis(Vector3.UP, m.player.model.rotation.y) * Vector3.RIGHT
+	m.rig.process_mode = Node.PROCESS_MODE_DISABLED
+	m.rig.cam.global_transform = Transform3D(Basis.IDENTITY, pp + rr * 2.8 + ff * 1.2 + Vector3(0, 1.2, 0)).looking_at(pp + Vector3(0, 0.8, 0) + ff * 0.3)
+	await seconds(0.3)
+	await snap("crouch_aim")
+	m.rig.process_mode = Node.PROCESS_MODE_INHERIT
+	Input.action_release("p3_aim")
+	m.player.crouching = false
+	m.player.body.set_stance("stand")
+	await seconds(0.5)
 	# dodge roll
 	await seconds(0.8)
 	Input.action_press("p3_dodge")

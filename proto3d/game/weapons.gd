@@ -145,6 +145,8 @@ func start_reload() -> void:
 		return
 	var d := def()
 	reloading = float(d.get("reload", 1.2))
+	if main.car == null:
+		main.player.body.play_reload(reloading)
 	main.audio.play("reload", main.player.global_position, -2.0, 1.2 / maxf(0.5, reloading))
 
 

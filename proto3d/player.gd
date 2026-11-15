@@ -36,6 +36,8 @@ var _roll_dir := Vector3.ZERO
 var _aim_blend := 0.0
 const AIM_SPEED := 2.6             # walking while aiming
 const ROLL_TIME := 0.7
+const CROUCH_SPEED := 1.8
+var crouching := false
 
 
 func _ready() -> void:
@@ -68,8 +70,16 @@ func _physics_process(delta: float) -> void:
 	var cam_yaw: float = rig.look_yaw() if rig != null else 0.0
 	var dir := Basis(Vector3.UP, cam_yaw) * Vector3(input.x, 0, input.y)
 	var speed := SPRINT_SPEED if Input.is_action_pressed("p3_sprint") else WALK_SPEED
+	if Input.is_action_just_pressed("p3_crouch") and is_on_floor() and not is_down():
+		crouching = not crouching
+		body.set_stance("crouch" if crouching else "stand")
+	if crouching and Input.is_action_pressed("p3_sprint"):
+		crouching = false                                     # running stands you up
+		body.set_stance("stand")
 	if aiming:
 		speed = AIM_SPEED
+	if crouching:
+		speed = minf(speed, CROUCH_SPEED)
 	if _update_swim(delta, dir):
 		return
 	# Dodge roll: a quick burst along the stick (or forward), can't be interrupted.
@@ -115,7 +125,9 @@ func _physics_process(delta: float) -> void:
 	body.set_speed(Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0)
 	# the gun arm comes up when aiming (and a little while after a shot)
 	_aim_blend = move_toward(_aim_blend, 1.0 if arm_up else 0.0, delta * 8.0)
-	body.set_aim(_aim_blend)
+	var pitch: float = rig.pitch if rig != null else 0.0
+	# the third-person camera normally looks a little down (-0.18): that's level for the gun
+	body.set_aim(_aim_blend, clampf((pitch + 0.18) / 0.7, -1.0, 1.0))
 
 
 ## In deep water: float with the head out, swim slowly, use up breath. Returns true while
@@ -124,8 +136,12 @@ func _update_swim(delta: float, dir: Vector3) -> bool:
 	var depth := SEA_LEVEL - global_position.y
 	var was := swimming
 	swimming = depth > 1.25 and not is_down()
+	if swimming and not was:
+		crouching = false
+		body.set_stance("swim")
 	if not swimming:
 		if was:
+			body.set_stance("crouch" if crouching else "stand")
 			body.play("move")
 		breath = minf(BREATH, breath + delta * 4.0)
 		return false

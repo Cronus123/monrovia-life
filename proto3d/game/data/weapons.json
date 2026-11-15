@@ -1,7 +1,7 @@
 {
  "_comment": "Weapons, by slot index (GameState.FISTS=0, PISTOL=1, BAT=2, MACHETE=3, SMG=4, SHOTGUN=5). Read by proto3d/game/weapons.gd. Melee: damage, reach (m), cooldown (s), anims. Guns: damage per pellet, car damage, cooldown between shots, auto (hold to fire), mag size, reload time, pellets and spread (radians), range, recoil (camera kick, rad), sound. Models from tools/make_weapons.py; icons in proto3d/ui/weapons.",
  "weapons": [
-  {"id": "fists", "name": "Fists", "melee": true, "damage": 22, "reach": 0.95, "cooldown": 0.38, "anims": ["punch", "punch", "swing"], "combo_bonus": 1.8},
+  {"id": "fists", "name": "Fists", "melee": true, "damage": 22, "reach": 0.95, "cooldown": 0.38, "anims": ["jab", "cross", "punch"], "combo_bonus": 1.8},
   {"id": "pistol", "name": "Pistol", "damage": 40, "car_damage": 18, "cooldown": 0.26, "auto": false, "mag": 12, "reload": 1.2, "pellets": 1, "spread": 0.006, "range": 150, "recoil": 0.035, "sound": "gunshot", "price": 1500, "rounds": 36, "ammo_price": 300},
   {"id": "bat", "name": "Baseball bat", "melee": true, "damage": 45, "reach": 1.45, "cooldown": 0.7, "anims": ["swing"], "price": 250},
   {"id": "machete", "name": "Machete", "melee": true, "damage": 65, "reach": 1.35, "cooldown": 0.6, "anims": ["swing"], "price": 400},

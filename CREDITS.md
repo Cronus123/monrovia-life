@@ -18,8 +18,11 @@ Monrovia Life: Streets, a LibGamer community game.
   Re-worked by `tools/make_weapons.py` (real size, grip origin, muzzle point, opaque materials,
   HUD icons). Licence and source: `third_party/quaternius-ultimate-gun-pack/`. The baseball bat and
   machete are our own models, built by the same script.
-- The extra animations used for weapons (aim pose, swing, hit reaction, dodge roll) come from the
-  same Quaternius character pack listed above.
+- **Universal Animation Library** (Standard) by [Quaternius](https://quaternius.itch.io/universal-animation-library)
+  (CC0 1.0). Walking, jogging, sprinting, crouching, swimming, two-handed aiming (up/level/down),
+  reloading, jab and cross punches, hit reactions, the roll and the melee swing. Retargeted onto the
+  character pack's skeleton by `tools/retarget_ual.gd` (`proto3d/models/people/ual_anims.res`).
+  Licence and source: `third_party/quaternius-universal-animation-library/`.
 
 ## Map data (1:1 Monrovia city, `proto3d/main_city.tscn`)
 - **OpenStreetMap**: roads, buildings, coastline, water, land use and place names are

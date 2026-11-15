@@ -13,10 +13,16 @@ const PEOPLE_DIR := "res://proto3d/models/people/%s.gltf"
 const MALE_MODELS := ["Casual_Male", "Casual2_Male", "Casual3_Male", "OldClassy_Male"]
 const FEMALE_MODELS := ["Casual_Female", "Casual2_Female", "Casual3_Female"]
 const SCALE := 0.55           # pack models are ~3.2 units tall; people here are ~1.75 m
+## One-shot states. "ual/..." animations are from Quaternius's Universal Animation Library
+## (CC0), retargeted onto this rig by tools/retarget_ual.gd (proto3d/models/people/ual_anims.res).
 const STATES := {"jump": "Jump", "get_in": "SitDown", "knocked": "Death", "punch": "Punch", "shoot": "Shoot_OneHanded",
-	"swing": "SwordSlash", "hit": "RecieveHit", "roll": "Roll"}
-const AIM_TIME := 0.0            # the frame of Shoot_OneHanded with the arm straight out, level
-const AIM_BONES := ["Torso", "Shoulder.R", "UpperArm.R", "LowerArm.R", "Fist.R"]
+	"swing": "ual/Sword_Attack", "hit": "ual/Hit_Chest", "roll": "ual/Roll", "jab": "ual/Punch_Jab",
+	"cross": "ual/Punch_Cross", "hit_head": "ual/Hit_Head"}
+const UAL_LIB := "res://proto3d/models/people/ual_anims.res"
+## upper body: the two-handed aim and the reload play on these bones over the legs' cycle
+const UPPER := ["Abdomen", "Torso", "Neck", "Head", "Shoulder.L", "UpperArm.L", "LowerArm.L", "Fist.L",
+	"Shoulder.R", "UpperArm.R", "LowerArm.R", "Fist.R"]
+static var _ual: AnimationLibrary
 
 # Palette shared with the 2D game.
 const SKIN_TONES := ["#5a3825", "#6b4329", "#4a2e1e", "#7a4e30", "#3d2618"]
@@ -148,12 +154,36 @@ func _attach(bone: String, mesh: Mesh, offset: Vector3, scl: Vector3, key: Strin
 
 
 # ------------------------------------------------------------------ animation
+var _state_name := ""
+var _state_t := 0.0
+const RETURNS := ["punch", "shoot", "swing", "hit", "roll", "jab", "cross", "hit_head"]
+
+
 func set_speed(v: float) -> void:
 	_speed = lerpf(_speed, v, 0.25)
 	if tree == null:
 		return
+	_watchdog()
 	tree.set("parameters/move/blend/blend_position", _speed)
-	tree.set("parameters/move/scale/scale", clampf(0.75 + _speed * 0.11, 0.85, 1.5))
+	tree.set("parameters/move/crouch_blend/blend_position", _speed)
+	tree.set("parameters/move/swim_blend/blend_position", _speed)
+	# the library cycles match their speeds: only a little stretch at the extremes
+	tree.set("parameters/move/scale/scale", clampf(0.9 + _speed * 0.03, 0.9, 1.15) if _ual != null else clampf(0.75 + _speed * 0.11, 0.85, 1.5))
+
+
+## A one-shot (punch, hit...) that has run past its animation goes back to moving, even if
+## quick repeated requests left the state machine waiting mid-transition.
+func _watchdog() -> void:
+	var cur := current_state()
+	if cur != _state_name:
+		_state_name = cur
+		_state_t = 0.0
+		return
+	_state_t += get_process_delta_time()
+	if cur in RETURNS:
+		var a := anim_player.get_animation(String(STATES[cur]))
+		if a != null and _state_t > a.length + 0.3:
+			playback.start("move")
 
 
 func play(state: String) -> void:
@@ -165,38 +195,88 @@ func current_state() -> String:
 	return String(playback.get_current_node()) if playback != null else ""
 
 
+static func _anim(name: String) -> AnimationNodeAnimation:
+	var n := AnimationNodeAnimation.new()
+	n.animation = name
+	return n
+
+
+func _space(points: Array, max_space: float) -> AnimationNodeBlendSpace1D:
+	var b := AnimationNodeBlendSpace1D.new()
+	b.min_space = points[0][1]
+	b.max_space = max_space
+	for i in points.size():
+		b.add_blend_point(_anim(points[i][0]), points[i][1], -1, "p%d" % i)
+	return b
+
+
 func _build_tree() -> void:
 	for a in ["Idle", "Walk", "Run"]:
 		anim_player.get_animation(a).loop_mode = Animation.LOOP_LINEAR
+	if _ual == null and ResourceLoader.exists(UAL_LIB):
+		_ual = load(UAL_LIB)
+	if _ual != null and not anim_player.has_animation_library("ual"):
+		anim_player.add_animation_library("ual", _ual)
+	var ual := _ual != null
+	# one-shot states must not loop, or they never hand back to "move"
+	for st in STATES.values():
+		var an := anim_player.get_animation(String(st))
+		if an != null:
+			an.loop_mode = Animation.LOOP_NONE
 	var sm := AnimationNodeStateMachine.new()
 	var move := AnimationNodeBlendTree.new()
-	var blend := AnimationNodeBlendSpace1D.new()
-	blend.min_space = 0.0
-	blend.max_space = 8.0
-	for p in [["Idle", 0.0], ["Walk", 1.6], ["Run", 5.0]]:
-		var n := AnimationNodeAnimation.new()
-		n.animation = p[0]
-		blend.add_blend_point(n, p[1], -1, String(p[0]).to_lower())
-	move.add_node("blend", blend)
+	var base := _bone_track_base()
+	# locomotion by speed (m/s): idle, walk, jog, sprint
+	if ual:
+		move.add_node("blend", _space([["ual/Idle", 0.0], ["ual/Walk", 1.5], ["ual/Jog_Fwd", 4.2], ["ual/Sprint", 7.6]], 8.0))
+		move.add_node("crouch_blend", _space([["ual/Crouch_Idle", 0.0], ["ual/Crouch_Fwd", 1.8]], 2.5))
+		move.add_node("swim_blend", _space([["ual/Swim_Idle", 0.0], ["ual/Swim_Fwd", 1.5]], 2.5))
+	else:
+		move.add_node("blend", _space([["Idle", 0.0], ["Walk", 1.6], ["Run", 5.0]], 8.0))
+		move.add_node("crouch_blend", _space([["Idle", 0.0], ["Walk", 1.6]], 2.5))
+		move.add_node("swim_blend", _space([["Idle", 0.0], ["Walk", 1.6]], 2.5))
 	move.add_node("scale", AnimationNodeTimeScale.new())
 	move.connect_node("scale", 0, "blend")
-	# aiming: the right arm (only) holds the raised-gun pose over the walk/run cycle
-	var pose := AnimationNodeAnimation.new()
-	pose.animation = "Shoot_OneHanded"
-	move.add_node("aim_pose", pose)
-	move.add_node("aim_freeze", AnimationNodeTimeScale.new())
-	move.add_node("aim_seek", AnimationNodeTimeSeek.new())
-	move.connect_node("aim_freeze", 0, "aim_pose")
-	move.connect_node("aim_seek", 0, "aim_freeze")
+	# stance: 0 standing, 1 crouching, 2 swimming
+	var stance := AnimationNodeTransition.new()
+	stance.xfade_time = 0.25
+	stance.input_count = 3
+	move.add_node("stance", stance)
+	move.connect_node("stance", 0, "scale")
+	move.connect_node("stance", 1, "crouch_blend")
+	move.connect_node("stance", 2, "swim_blend")
+	# aiming: the upper body holds the two-handed aim (tilted up/down with the camera)
+	if ual:
+		var tilt := AnimationNodeBlendSpace1D.new()
+		tilt.min_space = -1.0
+		tilt.max_space = 1.0
+		tilt.add_blend_point(_anim("ual/Pistol_Aim_Down"), -1.0, -1, "down")
+		tilt.add_blend_point(_anim("ual/Pistol_Aim_Neutral"), 0.0, -1, "level")
+		tilt.add_blend_point(_anim("ual/Pistol_Aim_Up"), 1.0, -1, "up")
+		move.add_node("aim_pose", tilt)
+	else:
+		move.add_node("aim_pose", _anim("Shoot_OneHanded"))
 	var aim := AnimationNodeBlend2.new()
 	aim.filter_enabled = true
-	var base := _bone_track_base()
-	for b in AIM_BONES:
+	for b in UPPER:
 		aim.set_filter_path(NodePath(base + ":" + b), true)
 	move.add_node("aim", aim)
-	move.connect_node("aim", 0, "scale")
-	move.connect_node("aim", 1, "aim_seek")
-	move.connect_node("output", 0, "aim")
+	move.connect_node("aim", 0, "stance")
+	move.connect_node("aim", 1, "aim_pose")
+	# reload: an upper-body one-shot over whatever the legs are doing
+	var reload := AnimationNodeOneShot.new()
+	reload.filter_enabled = true
+	reload.fadein_time = 0.12
+	reload.fadeout_time = 0.2
+	for b in UPPER:
+		reload.set_filter_path(NodePath(base + ":" + b), true)
+	move.add_node("reload", reload)
+	move.add_node("reload_anim", _anim("ual/Pistol_Reload" if ual else "PickUp"))
+	move.add_node("reload_speed", AnimationNodeTimeScale.new())
+	move.connect_node("reload_speed", 0, "reload_anim")
+	move.connect_node("reload", 0, "aim")
+	move.connect_node("reload", 1, "reload_speed")
+	move.connect_node("output", 0, "reload")
 	sm.add_node("move", move)
 	for s in STATES:
 		var n := AnimationNodeAnimation.new()
@@ -206,14 +286,14 @@ func _build_tree() -> void:
 	up.animation = "Death"
 	up.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
 	sm.add_node("get_up", up)
-	var states := ["move", "jump", "get_in", "knocked", "get_up", "punch", "shoot", "swing", "hit", "roll"]
+	var states := ["move", "jump", "get_in", "knocked", "get_up", "punch", "shoot", "swing", "hit", "roll", "jab", "cross", "hit_head"]
 	for a in states:
 		for b in states:
 			if a == b:
 				continue
 			var t := AnimationNodeStateMachineTransition.new()
 			t.xfade_time = 0.15 if b != "knocked" else 0.08
-			if b == "move" and a in ["get_up", "punch", "shoot", "swing", "hit", "roll"]:
+			if b == "move" and a in ["get_up", "punch", "shoot", "swing", "hit", "roll", "jab", "cross", "hit_head"]:
 				t.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
 				t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
 			sm.add_transition(a, b, t)
@@ -227,7 +307,6 @@ func _build_tree() -> void:
 	tree.active = true
 	playback = tree.get("parameters/playback")
 	tree.set("parameters/move/scale/scale", 1.0)
-	tree.set("parameters/move/aim_freeze/scale", 0.0)
 	tree.set("parameters/move/aim/blend_amount", 0.0)
 
 
@@ -241,12 +320,28 @@ func _bone_track_base() -> String:
 	return String(anim_player.get_node(anim_player.root_node).get_path_to(skeleton))
 
 
-## 0 = arms free, 1 = right arm raised to aim (blends over walking / running).
-func set_aim(amount: float) -> void:
+## 0 = arms free, 1 = gun up in both hands (over walking / running / crouching);
+## pitch -1 (aiming down) .. 1 (aiming up).
+func set_aim(amount: float, pitch: float = 0.0) -> void:
 	if tree == null:
 		return
 	tree.set("parameters/move/aim/blend_amount", amount)
-	tree.set("parameters/move/aim_seek/seek_request", AIM_TIME)
+	tree.set("parameters/move/aim_pose/blend_position", clampf(pitch, -1.0, 1.0))
+
+
+## "stand", "crouch" or "swim" (the legs' cycle; the upper body can still aim).
+func set_stance(s: String) -> void:
+	if tree != null:
+		tree.set("parameters/move/stance/transition_request", {"stand": "state_0", "crouch": "state_1", "swim": "state_2"}.get(s, "state_0"))
+
+
+## Upper-body reload, over walking or crouching.
+func play_reload(seconds: float) -> void:
+	if tree == null:
+		return
+	var a := anim_player.get_animation("ual/Pistol_Reload" if _ual != null else "PickUp")
+	tree.set("parameters/move/reload_speed/scale", a.length / seconds if a != null and seconds > 0.0 else 1.0)
+	tree.set("parameters/move/reload/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 
 
 ## Knocked down: go limp (physics ragdoll) if one is free. Returns false if not (then
