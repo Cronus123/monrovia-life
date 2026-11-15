@@ -322,7 +322,16 @@ func _update_ambience() -> void:
 ## (Cars carry their own engine and siren players, so search the whole game.)
 func _exit_tree() -> void:
 	var top: Node = get_parent() if get_parent() != null else self
+	var players: Array = []
 	for n in top.find_children("*", "", true, false):
 		if n is AudioStreamPlayer or n is AudioStreamPlayer3D:
-			n.stop()
-			n.stream = null
+			players.append(n)
+	if players.is_empty():
+		return
+	# the audio thread registers new playbacks and drops stopped ones asynchronously:
+	# give it a moment before and after stopping, so nothing is left behind at shutdown
+	OS.delay_msec(60)
+	for n in players:
+		n.stop()
+		n.stream = null
+	OS.delay_msec(60)

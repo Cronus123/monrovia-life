@@ -11,7 +11,7 @@ var max_cars := 16               # Settings: graphics quality
 const SPAWN_MIN := 90.0
 const SPAWN_MAX := 260.0
 const DESPAWN := 330.0
-const KINDS := [["taxi", 30], ["keke", 22], ["car", 18], ["suv", 12], ["truck", 8], ["police", 6], ["van", 4]]
+const KINDS := [["taxi", 28], ["keke", 20], ["car", 16], ["suv", 10], ["pickup", 7], ["minibus", 7], ["truck", 6], ["police", 5], ["van", 3]]
 const TrafficCarScript := preload("res://proto3d/game/traffic_car.gd")
 
 var graph: RoadGraph
@@ -139,8 +139,9 @@ func to_physics(c: TrafficCar, push: Vector3 = Vector3.ZERO) -> RigidBody3D:
 	var t := c.global_transform
 	var v := c.velocity()
 	var kind := c.kind
+	var paint = c.paint
 	_remove(c)
-	var car: RigidBody3D = main.spawn_car(kind, t.translated(Vector3(0, 0.25, 0)))
+	var car: RigidBody3D = main.spawn_car(kind, t.translated(Vector3(0, 0.25, 0)), paint)
 	car.linear_velocity = v + push
 	return car
 

@@ -9,6 +9,7 @@ const MINUTES_PER_SECOND := 2.0
 const LAMP_LIGHTS := 10
 
 const PropsScript := preload("res://proto3d/props.gd")
+const VehicleLook := preload("res://proto3d/vehicle_look.gd")
 var state: GameState
 var sun: DirectionalLight3D
 var env: Environment
@@ -154,6 +155,8 @@ func _apply() -> void:
 	if streamer != null and streamer._mats.has("Glow"):
 		var g: StandardMaterial3D = streamer._mats["Glow"]
 		g.emission_energy_multiplier = lerpf(0.0, 3.0, dk)
+	VehicleLook.night = dk
+	VehicleLook.update_shared()
 	if streamer != null and streamer._mats.has("Wall"):
 		(streamer._mats["Wall"] as ShaderMaterial).set_shader_parameter("night_windows", dk * 1.6)
 	get_tree().call_group("cars", "set_headlights", dk > 0.35 or ra > 0.6)

@@ -203,15 +203,7 @@ func _respray() -> void:
 	var car = main.car
 	car.repair()
 	if car.kind not in ["taxi", "keke", "police"]:
-		var col := Color.from_hsv(randf(), 0.6, 0.8)
-		for mi in car.model.find_children("*", "MeshInstance3D", true, false):
-			var mesh: Mesh = (mi as MeshInstance3D).mesh
-			for s in mesh.get_surface_count():
-				var mat := mesh.surface_get_material(s)
-				if mat is BaseMaterial3D and (mat as BaseMaterial3D).albedo_color.v > 0.8:
-					var nm := (mat as BaseMaterial3D).duplicate() as BaseMaterial3D
-					nm.albedo_color = col
-					(mi as MeshInstance3D).set_surface_override_material(s, nm)
+		car.set_paint(Color.from_hsv(randf(), 0.65, 0.75))
 	if state.stars > 0:
 		police.clear()
 		state.say("New paint, new plates. The police lost you.", Color("#3ccf7a"))

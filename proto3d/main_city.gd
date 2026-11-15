@@ -15,14 +15,16 @@ const CarScript := preload("res://proto3d/car.gd")
 const RigScript := preload("res://proto3d/camera_rig.gd")
 const StreamerScript := preload("res://proto3d/world_streamer.gd")
 const BigTalkScript := preload("res://proto3d/game/big_talk.gd")
+const VehicleLook := preload("res://proto3d/vehicle_look.gd")
 const CAR_MODELS := {
 	"taxi": preload("res://proto3d/models/veh_taxi.glb"), "car": preload("res://proto3d/models/veh_car.glb"),
 	"suv": preload("res://proto3d/models/veh_suv.glb"), "police": preload("res://proto3d/models/veh_police.glb"),
 	"keke": preload("res://proto3d/models/veh_keke.glb"), "sport": preload("res://proto3d/models/veh_sport.glb"),
 	"truck": preload("res://proto3d/models/veh_truck.glb"), "van": preload("res://proto3d/models/veh_van.glb"),
+	"pickup": preload("res://proto3d/models/veh_pickup.glb"), "minibus": preload("res://proto3d/models/veh_minibus.glb"),
 }
 const NAMES := {"keke": "keke", "taxi": "taxi", "car": "car", "sport": "sports car", "suv": "SUV", "truck": "truck",
-	"police": "police car", "van": "armoured van"}
+	"police": "police car", "van": "armoured van", "pickup": "pickup", "minibus": "minibus"}
 const LINES := ["How da body?", "Ma people! How you doing?", "Ah, the sun hot today oh.", "Rain coming, find shade small.",
 	"Keke business moving small small.", "The traffic by Tubman Boulevard... ya!", "Monrovia sweet at night time.",
 	"You hear? LibGamer tournament coming soon!", "I beg you, come buy my kala.", "Take your time on that road oh.",
@@ -362,10 +364,11 @@ func vehicle_name(kind: String) -> String:
 	return NAMES.get(kind, "car")
 
 
-func spawn_car(kind: String, t: Transform3D):
+func spawn_car(kind: String, t: Transform3D, paint: Variant = "random"):
 	var c = CarScript.new()
 	c.kind = kind
 	c.model_scene = CAR_MODELS.get(kind, CAR_MODELS["car"])
+	c.paint_color = VehicleLook.random_paint(kind, _rng) if typeof(paint) == TYPE_STRING else paint
 	add_child(c)
 	c.reset_to(t)
 	c.hit_person.connect(_on_car_hit_person)
@@ -787,3 +790,7 @@ func _on_pause_choice(i: int) -> void:
 		3:
 			save_game()
 			get_tree().quit()
+
+
+func _exit_tree() -> void:
+	VehicleLook.release()

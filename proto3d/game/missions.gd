@@ -115,6 +115,9 @@ func _begin_step() -> void:
 
 
 func _paint(car, col: Color) -> void:
+	if car.has_method("set_paint"):
+		car.set_paint(col)
+		return
 	for mi in car.model.find_children("*", "MeshInstance3D", true, false):
 		var mesh: Mesh = (mi as MeshInstance3D).mesh
 		for k in mesh.get_surface_count():

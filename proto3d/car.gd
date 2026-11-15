@@ -18,6 +18,13 @@ signal exploded(car: RigidBody3D)
 signal hit_person(car: RigidBody3D, person: Node, speed: float)
 signal crashed(car: RigidBody3D, other: Node, impact: float)
 
+const Look := preload("res://proto3d/vehicle_look.gd")
+const DEBRIS := {"bumper": preload("res://proto3d/models/debris/debris-bumper.glb"),
+	"door": preload("res://proto3d/models/debris/debris-door.glb"),
+	"door_window": preload("res://proto3d/models/debris/debris-door-window.glb"),
+	"tire": preload("res://proto3d/models/debris/debris-tire.glb"),
+	"plate": preload("res://proto3d/models/debris/debris-plate-a.glb")}
+
 const REST := 0.42            # suspension travel (m)
 const WHEEL_R := 0.36
 const ROLLING := 45.0         # rolling resistance per wheel (N per m/s)
@@ -36,6 +43,8 @@ const TUNING := {
 	"suv":    {"mass": 1900.0, "engine": 12000.0, "vmax": 31.0, "mu": 1.25, "spring": 38000.0, "damp": 3800.0, "com": 0.68, "track": 0.88, "base": 1.45, "steer": Vector2(0.5, 0.12), "arb": 9000.0, "drag": 1.15},
 	"van":    {"mass": 2600.0, "engine": 13500.0, "vmax": 27.0, "mu": 1.2, "spring": 48000.0, "damp": 4800.0, "com": 0.62, "track": 0.9, "base": 1.55, "steer": Vector2(0.48, 0.12), "arb": 14000.0, "drag": 1.3},
 	"truck":  {"mass": 6000.0, "engine": 26000.0, "vmax": 23.0, "mu": 1.1, "spring": 110000.0, "damp": 10500.0, "com": 0.85, "track": 1.0, "base": 1.9, "steer": Vector2(0.45, 0.1), "arb": 30000.0, "drag": 2.2},
+	"pickup": {"mass": 1800.0, "engine": 11500.0, "vmax": 30.0, "mu": 1.25, "spring": 36000.0, "damp": 3600.0, "com": 0.62, "track": 0.86, "base": 1.6, "steer": Vector2(0.5, 0.12), "arb": 9000.0, "drag": 1.1},
+	"minibus": {"mass": 2200.0, "engine": 11000.0, "vmax": 27.0, "mu": 1.2, "spring": 42000.0, "damp": 4200.0, "com": 0.72, "track": 0.86, "base": 1.5, "steer": Vector2(0.5, 0.12), "arb": 9000.0, "drag": 1.3},
 	"keke":   {"mass": 380.0, "engine": 2600.0, "vmax": 17.0, "mu": 1.05, "spring": 9000.0, "damp": 900.0, "com": 0.75, "track": 0.5, "base": 1.05, "steer": Vector2(0.65, 0.2), "arb": 0.0, "drag": 0.55},
 }
 
@@ -71,6 +80,11 @@ var _spin := 0.0
 var _contact := Vector3.ZERO         # last contact point (global) and normal
 var _contact_n := Vector3.UP
 var _detached := 0
+var paint_color: Variant = null      # set before adding (traffic colours), or set_paint()
+var look := {}                      # vehicle_look.gd parts: lights, wheels, paint surfaces
+var braking_now := false
+var _ind_side := 0                  # indicator: -1 left, 1 right, 0 off
+var _ind_t := 0.0
 var _prev_vel := Vector3.ZERO
 
 
@@ -99,6 +113,7 @@ func _ready() -> void:
 		_glb.rotation.y = PI / 2       # Blender models face +X; the car drives along -Z
 		model.add_child(_glb)
 		_find_parts()
+		_wheels_from_model()
 	_fit_collision()
 	# Detects people the car runs into (they aren't solid to the car).
 	hit_area = Area3D.new()
@@ -146,13 +161,38 @@ func _fit_collision() -> void:
 
 
 func _find_parts() -> void:
+	look = Look.style(_glb, paint_color, true)
 	for n in _glb.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
-		if String(mi.name).begins_with("Cylinder"):
+		var nm := String(mi.name)
+		if nm.begins_with("Cylinder") or (nm.begins_with("wheel") and not nm.contains("_hub")):
 			# wheels: spin them, steer the front ones (models face +X: front = +x)
 			_wheel_parts.append([mi, mi.transform, mi.transform.origin.x > 0.0])
-		else:
+		elif not nm.begins_with("interior"):
 			_parts.append(mi)
+
+
+## Suspension rays under the model's own wheels (track and wheelbase of that vehicle).
+func _wheels_from_model() -> void:
+	var front: Array = []
+	var rear: Array = []
+	for w in _wheel_parts:
+		var p: Vector3 = to_local((w[0] as Node3D).global_position)
+		(front if w[2] else rear).append(Vector3(p.x, 0.45, p.z))
+	if rear.size() < 2 or front.is_empty():
+		return
+	if front.size() == 1:                     # keke: one front wheel - two rays close together
+		var f: Vector3 = front[0]
+		front = [f + Vector3(-0.18, 0, 0), f + Vector3(0.18, 0, 0)]
+	front.sort_custom(func(a, b): return a.x < b.x)
+	rear.sort_custom(func(a, b): return a.x < b.x)
+	_wheels = [front[0], front[front.size() - 1], rear[0], rear[rear.size() - 1]]
+
+
+## New paint (respray shop, mission cars, traffic colours).
+func set_paint(col: Color) -> void:
+	paint_color = col
+	Look.repaint(look, col)
 
 
 ## Close-up driving view: a hood camera just in front of the windscreen.
@@ -193,6 +233,7 @@ func _physics_process(delta: float) -> void:
 	_prev_vel = linear_velocity
 	_update_fire(delta)
 	_spin_wheels(delta)
+	_update_lights(delta)
 	if _beacon != null and siren:
 		var on := int(Time.get_ticks_msec() / 180) % 2 == 0
 		_beacon_mats[0].emission_energy_multiplier = 3.0 if on else 0.2
@@ -254,6 +295,8 @@ func _physics_process(delta: float) -> void:
 			drive = engine * 0.55 * throttle
 	if handbrake:
 		braking = maxf(braking, brake * 0.6)
+	braking_now = braking > 0.0 and not handbrake
+	_ind_side = 0 if absf(steer_in) < 0.3 or absf(speed) < 1.0 else (-1 if steer_in > 0.0 else 1)
 
 	var space := get_world_3d().direct_space_state
 	var up := global_basis.y
@@ -329,6 +372,29 @@ static func _grip_curve(a: float) -> float:
 	if x < 1.0:
 		return sin(x * PI * 0.5)
 	return maxf(0.75, 1.0 - (x - 1.0) * 0.08)
+
+
+## Head, tail/brake lights and indicators (hazards when wrecked or on fire).
+func _update_lights(delta: float) -> void:
+	var ls: Dictionary = look.get("lights", {})
+	if ls.is_empty():
+		return
+	var lamps_on := not _lights.is_empty() and (_lights[0] as Light3D).visible
+	_set_glow(ls.get("light_head"), 0.0 if lights_broken or wrecked else (3.5 if lamps_on else 0.0))
+	_set_glow(ls.get("light_tail"), 0.0 if wrecked else (4.0 if braking_now else (1.2 if lamps_on else 0.0)))
+	_ind_t += delta
+	var blink := fmod(_ind_t, 0.8) < 0.4
+	var hazard := burning >= 0.0 or (damage > 60.0 and not wrecked)
+	_set_glow(ls.get("light_ind_l"), 3.0 if blink and (hazard or _ind_side == -1) else 0.0)
+	_set_glow(ls.get("light_ind_r"), 3.0 if blink and (hazard or _ind_side == 1) else 0.0)
+
+
+func _set_glow(mi, energy: float) -> void:
+	if mi == null or not is_instance_valid(mi):
+		return
+	var m := (mi as MeshInstance3D).get_surface_override_material(0) as StandardMaterial3D
+	if m != null:
+		m.emission_energy_multiplier = energy
 
 
 func _spin_wheels(delta: float) -> void:
@@ -429,11 +495,12 @@ func dent(point: Vector3, depth: float) -> void:
 		var am := mi.mesh as ArrayMesh
 		if am == null:
 			continue
+		# rebuild every surface in order (surface overrides - paint, glass - stay valid)
+		var out := ArrayMesh.new()
 		for s in am.get_surface_count():
 			var mdt := MeshDataTool.new()
 			if mdt.create_from_surface(am, s) != OK:
 				continue
-			var changed := false
 			for v in mdt.get_vertex_count():
 				var vp := mdt.get_vertex(v)
 				var d := vp.distance_to(lp)
@@ -441,13 +508,10 @@ func dent(point: Vector3, depth: float) -> void:
 					var k := 1.0 - d / radius
 					var dir := (lc - vp).normalized()
 					mdt.set_vertex(v, vp + dir * depth * k * k)
-					changed = true
-			if changed:
-				var mat := am.surface_get_material(s)
-				am.surface_remove(s)
-				mdt.commit_to_surface(am)
-				# commit appends the surface at the end: move its material along
-				am.surface_set_material(am.get_surface_count() - 1, mat)
+			mdt.commit_to_surface(out)
+			out.surface_set_material(out.get_surface_count() - 1, am.surface_get_material(s))
+		if out.get_surface_count() == am.get_surface_count():
+			mi.mesh = out
 
 
 func _detach_part_near(point: Vector3, impact: float) -> void:
@@ -465,6 +529,7 @@ func _detach_part_near(point: Vector3, impact: float) -> void:
 		if d < bd:
 			bd = d
 			best = mi
+	_fling_debris(point, impact)
 	if best == null:
 		return
 	_detached += 1
@@ -487,6 +552,36 @@ func _detach_part_near(point: Vector3, impact: float) -> void:
 	_parts.erase(best)
 	body.linear_velocity = linear_velocity * 0.6 + (best.global_position - global_position).normalized() * impact * 0.15 + Vector3.UP * 2.0
 	body.angular_velocity = Vector3(randf_range(-6, 6), randf_range(-6, 6), randf_range(-6, 6))
+	get_tree().create_timer(40.0).timeout.connect(body.queue_free)
+
+
+## A hard hit throws off a body panel (Kenney Car Kit debris, in this car's paint):
+## a bumper from the front or back, a door from the side, sometimes a wheel.
+func _fling_debris(point: Vector3, impact: float) -> void:
+	var lp := to_local(point)
+	var key: String = "bumper" if absf(lp.z) > 1.2 else (["door", "door_window"][randi() % 2])
+	if impact > 24.0 and randf() < 0.35:
+		key = "tire"
+	var node := (DEBRIS[key] as PackedScene).instantiate() as Node3D
+	var body := RigidBody3D.new()
+	body.mass = 15.0 if key != "tire" else 20.0
+	body.collision_layer = 8
+	body.collision_mask = 1 | 4 | 8
+	get_parent().add_child(body)
+	body.global_transform = Transform3D(global_basis, point + Vector3(0, 0.3, 0))
+	node.scale = Vector3.ONE * 2.2
+	body.add_child(node)
+	if paint_color != null and key != "tire" and DisplayServer.get_name() != "headless":
+		var m: StandardMaterial3D = Look.paint_material(paint_color)
+		for mi in node.find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).material_override = m
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(1.2, 0.5, 0.4) if key == "bumper" else (Vector3(0.7, 0.7, 0.3) if key == "tire" else Vector3(1.0, 0.9, 0.12))
+	cs.shape = box
+	body.add_child(cs)
+	body.linear_velocity = _prev_vel * 0.5 + (point - global_position).normalized() * impact * 0.2 + Vector3.UP * 3.0
+	body.angular_velocity = Vector3(randf_range(-8, 8), randf_range(-8, 8), randf_range(-8, 8))
 	get_tree().create_timer(40.0).timeout.connect(body.queue_free)
 
 
@@ -542,6 +637,8 @@ func repair() -> void:
 		_glb.rotation.y = PI / 2
 		model.add_child(_glb)
 		_find_parts()
+		if paint_color != null:
+			set_paint(paint_color)
 	_detached = 0
 
 

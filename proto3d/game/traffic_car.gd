@@ -16,6 +16,10 @@ var abandoned := false
 var rng := RandomNumberGenerator.new()
 var _yaw := 0.0
 var _honk_t := 0.0
+var paint: Variant = null
+var _wheels: Array = []           # [MeshInstance3D, rest Transform3D]
+var _spin := 0.0
+const Look := preload("res://proto3d/vehicle_look.gd")
 
 
 func setup(g: RoadGraph, spot: Array, k: String, model_scene: PackedScene, seed_value: int) -> void:
@@ -28,18 +32,39 @@ func setup(g: RoadGraph, spot: Array, k: String, model_scene: PackedScene, seed_
 	collision_layer = 4
 	collision_mask = 0
 	sync_to_physics = false
-	var shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(1.85, 1.3, 4.3) if k != "keke" else Vector3(1.3, 1.6, 2.6)
-	shape.shape = box
-	shape.position.y = 0.85
-	add_child(shape)
 	var m := model_scene.instantiate() as Node3D
 	m.rotation.y = PI / 2
 	add_child(m)
+	paint = Look.random_paint(k, rng)
+	var parts: Dictionary = Look.style(m, paint, false)
+	for w in parts["wheels"]:
+		_wheels.append([w, (w as Node3D).transform])
+	# collision box from the model's size
+	var aabb := AABB()
+	var first := true
+	for mi in m.find_children("*", "MeshInstance3D", true, false):
+		var a: AABB = _rel(mi as Node3D) * (mi as MeshInstance3D).get_aabb()
+		aabb = a if first else aabb.merge(a)
+		first = false
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(aabb.size.x * 0.95, minf(aabb.size.y, 2.6) * 0.8, aabb.size.z * 0.95) if not first else Vector3(1.85, 1.3, 4.3)
+	shape.shape = box
+	shape.position.y = 0.85 if first else aabb.get_center().y
+	add_child(shape)
 	var lp: Array = graph.lane_point(edge, s, dir)
 	_yaw = atan2(-(lp[1] as Vector3).x, -(lp[1] as Vector3).z)
 	speed = graph.speed_limit(edge) * 0.8
+
+
+## Transform of a model part relative to this car (works before entering the tree).
+func _rel(n: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var cur: Node = n
+	while cur != null and cur != self:
+		t = (cur as Node3D).transform * t
+		cur = cur.get_parent()
+	return t
 
 
 func place() -> void:
@@ -83,6 +108,11 @@ func _physics_process(delta: float) -> void:
 	var accel := 3.5 if target > speed else 9.0
 	speed = move_toward(speed, target, accel * delta)
 	s += speed * delta
+	if not _wheels.is_empty():
+		_spin = fmod(_spin + speed / 0.36 * delta, TAU)
+		for w in _wheels:
+			var rest: Transform3D = w[1]
+			(w[0] as Node3D).transform = Transform3D(Basis(Vector3(0, 0, 1), -_spin) * rest.basis, rest.origin)
 	var L: float = graph.edges[edge]["len"]
 	if s > L:
 		var node := graph.end_node(edge, dir)

@@ -1,0 +1,2 @@
+Kenney Car Kit 3.1 (CC0 1.0), https://kenney.nl/assets/car-kit
+Downloaded 2026-11-15 from kenney.nl. Used by tools/make_vehicles.py to build proto3d/models/veh_*.glb.

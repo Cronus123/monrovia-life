@@ -61,7 +61,9 @@ class Prop extends RigidBody3D:
 			if lamp_at != Vector3.INF:
 				knocked_lamps.append(lamp_at)
 				for c in find_children("Head", "MeshInstance3D", true, false):
-					(c as MeshInstance3D).material_override = null
+					var dark := StandardMaterial3D.new()
+					dark.albedo_color = Color(0.25, 0.25, 0.27)
+					(c as MeshInstance3D).material_override = dark          # broken lamp: dark
 		sleeping = false
 		var top := global_basis.y * 2.5
 		apply_impulse(v * mass * 0.35 + Vector3.UP * mass * 0.8, top)

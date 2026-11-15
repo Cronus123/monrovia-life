@@ -857,6 +857,9 @@ func _spawn_goon(near: Vector3, back: float) -> void:
 
 
 func _paint_black(c) -> void:
+	if c.has_method("set_paint"):
+		c.set_paint(Color(0.04, 0.04, 0.05))
+		return
 	var black := _mat(Color(0.05, 0.05, 0.06), 0.25, 0.6)
 	for mi in c.model.find_children("Cube*", "MeshInstance3D", true, false):
 		var m := mi as MeshInstance3D
