@@ -27,7 +27,8 @@ const DEBRIS := {"bumper": preload("res://proto3d/models/debris/debris-bumper.gl
 
 const REST := 0.42            # suspension travel (m)
 const WHEEL_R := 0.36
-const ROLLING := 45.0         # rolling resistance per wheel (N per m/s)
+const ROLLING := 0.012        # rolling resistance per wheel (N per m/s, per kg of car)
+const ENGINE_BRAKE := 0.05    # off the throttle: drag per driven wheel (N per m/s, per kg)
 const STEER_RATE := 2.6       # rad/s the wheels turn
 const BURN_TIME := 4.0
 const PEAK_SLIP := 0.14       # rad: slip angle where the tyre grips best
@@ -102,6 +103,9 @@ func _ready() -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, tune["com"], 0.1)
 	angular_damp = 1.2
+	# REPLACE: otherwise Godot adds the world's default damping (0.1/s), a drag of ~2 kN at
+	# 60 km/h that kept every car well under its top speed
+	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 	linear_damp = 0.02
 	continuous_cd = true
 	contact_monitor = true
@@ -279,22 +283,29 @@ func _physics_process(delta: float) -> void:
 	var brake: float = mass * 9.2
 	# Speed-sensitive steering, turned smoothly.
 	var sl: Vector2 = tune["steer"]
-	var lock := lerpf(sl.x, sl.y, clampf(absf(speed) / vmax, 0.0, 1.0))
-	steer = move_toward(steer, steer_in * lock, STEER_RATE * delta)
+	var vfrac := clampf(absf(speed) / vmax, 0.0, 1.0)
+	var lock := lerpf(sl.x, sl.y, vfrac)
+	# the player's wheel turns slower at speed (no twitchy lane changes on the highway)
+	# and comes back to centre quicker than it turns in
+	var rate := STEER_RATE
+	if driven:
+		rate *= lerpf(1.0, 0.6, vfrac) * (1.6 if absf(steer_in) < 0.05 else 1.0)
+	steer = move_toward(steer, steer_in * lock, rate * delta)
 
-	# Throttle forward, or brake then reverse.
+	# Throttle forward, or brake then reverse (a short dead band so a tap of S at a crawl
+	# doesn't throw it into reverse, but holding it does).
 	var drive := 0.0
 	var braking := 0.0
 	if throttle > 0.0:
-		if speed < -0.5:
+		if speed < -0.8:
 			braking = brake * throttle
 		elif speed < vmax:
 			drive = engine * throttle * (1.0 - 0.6 * clampf(speed / vmax, 0.0, 1.0))
 	elif throttle < 0.0:
-		if speed > 0.5:
+		if speed > 0.8:
 			braking = brake * -throttle
-		elif speed > -8.0:
-			drive = engine * 0.55 * throttle
+		elif speed > -minf(9.0, vmax * 0.4):
+			drive = engine * 0.6 * throttle
 	if handbrake:
 		braking = maxf(braking, brake * 0.6)
 	braking_now = braking > 0.0 and not handbrake
@@ -316,7 +327,14 @@ func _physics_process(delta: float) -> void:
 			continue
 		contacts[i] = hit.position
 		comp[i] = (REST + WHEEL_R) - origin.distance_to(hit.position)
-	var arb: float = tune["arb"]
+	var arb: float = tune["arb"] * (1.6 if driven else 1.0)     # flatter in corners for the player
+	if driven and arb < 3000.0:
+		arb = 3000.0                                              # even the keke gets a little
+	var static_load: float = mass * 9.8 * 0.25
+	var grounded := 0
+	for i in 4:
+		if contacts[i] != null:
+			grounded += 1
 	var slip_sum := 0.0
 	for i in 4:
 		if contacts[i] == null:
@@ -328,6 +346,8 @@ func _physics_process(delta: float) -> void:
 		var other := i ^ 1
 		var roll := (comp[i] - comp[other]) * arb
 		var load := maxf(0.0, comp[i] * spring - pv.dot(up) * damp + roll)
+		if driven:
+			load = minf(load, static_load * 2.6)    # a kerb strike can't catapult the car
 		apply_force(up * load, r)
 		# Tyre directions: the front wheels turn with the steering.
 		var wheel_basis := global_basis * (Basis(Vector3.UP, steer) if front else Basis.IDENTITY)
@@ -335,13 +355,20 @@ func _physics_process(delta: float) -> void:
 		var wside := wheel_basis.x
 		var at := r + up * 0.25                # at axle height: leans the body without flipping it
 		var mu := mu0 * (0.55 if (handbrake and not front and driven) else 1.0)
+		if driven and front:
+			mu *= 1.12                          # a little more front grip: less understeer
 		var limit := mu * load
 		var side_v := pv.dot(wside)
 		var long_v := pv.dot(wfwd)
 		# longitudinal: rolling resistance, rear-wheel drive, brakes (more at the front)
-		var long_f := -long_v * ROLLING
+		var long_f := -long_v * ROLLING * mass
+		if not front and absf(throttle) < 0.05 and not handbrake:
+			long_f -= long_v * ENGINE_BRAKE * mass
 		if not front:
-			long_f += drive * 0.5
+			var d := drive * 0.5
+			if driven and not handbrake:
+				d = clampf(d, -limit * 0.8, limit * 0.8)      # traction control: no wheelspin
+			long_f += d
 		if braking > 0.0 and absf(long_v) > 0.05:
 			long_f -= signf(long_v) * braking * (0.3 if front else 0.2)
 		elif braking > 0.0:
@@ -362,9 +389,33 @@ func _physics_process(delta: float) -> void:
 		apply_force(wside * total.y + wfwd * total.x, at)
 	wheel_slip = clampf(slip_sum, 0.0, 1.0)
 	apply_central_force(-linear_velocity * linear_velocity.length() * float(tune["drag"]))
+	if driven and grounded >= 2 and not wrecked:
+		_assists(handbrake, delta)
 
 	_hit_people()
 	_recover(delta)
+
+
+## Arcade driving aids for the player's car (not traffic):
+##  - stability: yaw rate is pulled toward what the steering asks for, so a slide (or a
+##    handbrake turn, once the handbrake is let go) straightens out instead of spinning;
+##    while the handbrake is held the car is free to slide
+##  - roll: body roll is damped and a big lean is pushed back, so kerbs and hard turns
+##    don't tip it over
+func _assists(handbrake: bool, delta: float) -> void:
+	var up := global_basis.y
+	var fwd := -global_basis.z
+	var inertia := mass * (float(tune["base"]) * float(tune["base"]) + float(tune["track"]) * float(tune["track"])) * 0.5
+	if not handbrake and absf(speed) > 3.0:
+		var wheelbase := float(tune["base"]) * 2.0
+		var want := speed * tan(steer) / wheelbase                  # yaw rate the front wheels ask for
+		var yaw_rate := angular_velocity.dot(up)
+		var err := yaw_rate - want
+		apply_torque(-up * err * inertia * 3.5)
+	var roll_rate := angular_velocity.dot(fwd)
+	var lean := asin(clampf(global_basis.x.y, -1.0, 1.0))           # + = left side up
+	var torque := -roll_rate * 2.5 + (lean * 4.0 if absf(lean) > 0.25 else 0.0)     # + about fwd lowers the right side
+	apply_torque(fwd * torque * inertia)
 
 
 ## Lateral grip (0..1 of the friction limit) vs slip angle: rises steeply, peaks at
@@ -748,7 +799,7 @@ func _recover(delta: float) -> void:
 		return
 	if global_basis.y.y < 0.35 and linear_velocity.length() < 2.0:
 		_upside_t += delta
-		if _upside_t > 2.5:
+		if _upside_t > 3.0:
 			_upside_t = 0.0
 			var yaw := global_rotation.y
 			reset_to(Transform3D(Basis(Vector3.UP, yaw), global_position + Vector3(0, 1.2, 0)))

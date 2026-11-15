@@ -35,6 +35,10 @@ var _shake := 0.0               # crash shake strength, decays
 var _blur: ShaderMaterial
 var _blur_rect: ColorRect
 const STICK_SPEED := 2.6       # rad/s at full right-stick deflection
+const CHASE_YAW_RATE := 4.0    # how fast the chase camera swings round behind the car (1/s)
+const CHASE_POS_RATE := 9.0    # chase camera height smoothing (1/s): soaks up kerb bumps
+var _chase_yaw := 0.0           # smoothed car heading the chase camera sits behind
+var _chase_pos := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -71,6 +75,8 @@ func follow(new_target: Node3D, vehicle: bool) -> void:
 	target = new_target
 	if vehicle and not in_vehicle:
 		yaw = 0.0                                   # look straight ahead when getting in
+		_chase_yaw = new_target.global_rotation.y
+		_chase_pos = new_target.global_position
 	elif not vehicle and in_vehicle and target != null:
 		yaw = target.global_rotation.y              # keep facing the way the car faced
 	in_vehicle = vehicle
@@ -89,7 +95,9 @@ func toggle_view() -> void:
 ## World yaw the camera is looking along (used for camera-relative movement).
 func look_yaw() -> float:
 	if in_vehicle and target != null:
-		return target.global_rotation.y + yaw
+		# third person lags a little behind the heading (slides and spins read better);
+		# the driver's seat view stays locked to the car
+		return (target.global_rotation.y if is_first_person() else _chase_yaw) + yaw
 	return yaw
 
 
@@ -123,6 +131,12 @@ func _process(delta: float) -> void:
 	if in_vehicle and _idle_look > RECENTER_DELAY:
 		yaw = lerp_angle(yaw, 0.0, clampf(delta * 2.5, 0.0, 1.0))
 		pitch = lerpf(pitch, -0.12 if not first else -0.05, clampf(delta * 2.0, 0.0, 1.0))
+	if in_vehicle:
+		_chase_yaw = lerp_angle(_chase_yaw, target.global_rotation.y, clampf(delta * CHASE_YAW_RATE, 0.0, 1.0))
+		var tp := target.global_position          # only the height is smoothed: no lag at speed
+		_chase_pos = Vector3(tp.x, lerpf(_chase_pos.y, tp.y, clampf(delta * CHASE_POS_RATE, 0.0, 1.0)), tp.z)
+		if absf(_chase_pos.y - tp.y) > 4.0:                         # teleported
+			_chase_pos = target.global_position
 	var world_yaw := look_yaw()
 	var look_basis := Basis.from_euler(Vector3(pitch, world_yaw, 0.0))
 
@@ -133,7 +147,7 @@ func _process(delta: float) -> void:
 		var right := Basis(Vector3.UP, world_yaw) * Vector3.RIGHT
 		if in_vehicle:
 			arm.spring_length = 7.5
-			global_position = target.global_position + Vector3(0, 2.0, 0)
+			global_position = _chase_pos + Vector3(0, 2.0, 0)
 		else:
 			_aim_t = move_toward(_aim_t, 1.0 if aiming else 0.0, delta * 6.0)
 			arm.spring_length = lerpf(3.0, 2.1, _aim_t)
