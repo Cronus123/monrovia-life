@@ -16,15 +16,24 @@ var main
 var scenes := {}                  # key -> {"people": [...], "kind": String, "pos": Vector3, "ball": RigidBody3D}
 var _t := 0.0
 var _rng := RandomNumberGenerator.new()
+var _queue: Array = []            # [scene key, member]: people are placed one per frame
+var _pool: Array = []             # hidden, ready-built characters (building one costs ~25 ms)
+var _pool_t := 0.0
 
 
 func setup(main_node) -> void:
 	main = main_node
 	_rng.seed = 9090
+	# build everyone now, while the game is loading, and reuse them (no hitches in play)
+	for i in MAX_PEOPLE:
+		var c = CharacterScript.new()
+		c.set_outfit(CharacterScript.random_outfit(_rng, _rng.randf() < 0.5))
+		add_child(c)
+		_park(c)
 
 
 func people_count() -> int:
-	var n := 0
+	var n := _queue.size()
 	for k in scenes:
 		n += (scenes[k]["people"] as Array).size()
 	return n
@@ -34,6 +43,18 @@ func _process(delta: float) -> void:
 	if main == null or not main.ready_done:
 		return
 	_update_football(delta)
+	# build the pool slowly in quiet moments (one person every half second)
+	_pool_t -= delta
+	if _pool_t <= 0.0 and _pool.size() + _in_use() < MAX_PEOPLE:
+		_pool_t = 0.5
+		var c = CharacterScript.new()
+		c.set_outfit(CharacterScript.random_outfit(_rng, _rng.randf() < 0.5))
+		add_child(c)
+		_park(c)
+	if not _queue.is_empty() and not _pool.is_empty():
+		var job: Array = _queue.pop_front()
+		if scenes.has(job[0]):
+			_build_person(job[0], job[1])
 	_t -= delta
 	if _t > 0.0:
 		return
@@ -133,30 +154,51 @@ func _ground(at: Vector3) -> float:
 
 
 func _spawn_scene(key: String, kind: String, pos: Vector3, members: Array) -> void:
-	var people := []
+	scenes[key] = {"people": [], "kind": kind, "pos": pos, "ball": null}
 	for mbr in members:
-		var c = CharacterScript.new()
-		c.set_outfit(CharacterScript.random_outfit(_rng, _rng.randf() < 0.5))
-		add_child(c)
-		var at: Vector3 = mbr[0]
-		var g := _ground(at)
-		c.global_position = Vector3(at.x, g if g != INF else at.y, at.z)
-		c.rotation.y = float(mbr[1])
-		c.scale = Vector3.ONE * float(mbr[3])
-		if String(mbr[2]) != "":
-			c.loop_anim.call_deferred(String(mbr[2]))
-		people.append(c)
-	scenes[key] = {"people": people, "kind": kind, "pos": pos, "ball": null}
+		_queue.append([key, mbr])
+
+
+func _in_use() -> int:
+	var n := 0
+	for k in scenes:
+		n += (scenes[k]["people"] as Array).size()
+	return n
+
+
+func _park(c) -> void:
+	c.visible = false
+	c.process_mode = Node.PROCESS_MODE_DISABLED
+	c.global_position = Vector3(0, -500, 0)
+	_pool.append(c)
+
+
+func _build_person(key: String, mbr: Array) -> void:
+	var c = _pool.pop_back()
+	c.visible = true
+	c.process_mode = Node.PROCESS_MODE_INHERIT
+	c.set_outfit(CharacterScript.random_outfit(_rng, _rng.randf() < 0.5))
+	c.loop_anim("")
+	var at: Vector3 = mbr[0]
+	var g := _ground(at)
+	c.global_position = Vector3(at.x, g if g != INF else at.y, at.z)
+	c.rotation.y = float(mbr[1])
+	c.scale = Vector3.ONE * float(mbr[3])
+	if String(mbr[2]) != "":
+		c.loop_anim.call_deferred(String(mbr[2]))
+	(scenes[key]["people"] as Array).append(c)
 
 
 func _clear(key: String) -> void:
 	for c in scenes[key]["people"]:
 		if is_instance_valid(c):
-			c.queue_free()
+			c.scale = Vector3.ONE
+			_park(c)
 	var b = scenes[key]["ball"]
 	if b != null and is_instance_valid(b):
 		b.queue_free()
 	scenes.erase(key)
+	_queue = _queue.filter(func(j): return j[0] != key)
 
 
 # ------------------------------------------------------------------ football

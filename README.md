@@ -37,6 +37,12 @@ and is tagged `v0.1-2d` in Git.
   T-shirts), a walled house off 16th Street in Sinkor and a final election-night choice: expose his
   stolen road fund, or help make him "Senator Dweh". His own jobs, lines and grudges; all data-driven
   (`proto3d/game/data/bigtalk.json`). He and his "Big Talk Progress Party" are made up.
+- **Street life:** sellers at market stalls, people chatting outside shops, kids playing football on
+  open ground, vendors pushing wheelbarrows, people sheltering under awnings when it rains, kekes
+  pulling over for passengers, and more or fewer people out depending on the time of day.
+- **Skills & perks:** Stamina, Driving, Shooting, Strength and Swimming grow as you use them;
+  reputation from jobs unlocks perks (Market Mouth, Keke King, Hustler, Bush Runner, Cool Head,
+  Roadside Mechanic, Big Talk Connect). See them in the pause menu; B uses a perk ability.
 - **Side jobs and daily life:** taxi fares to real named places, cookshops that heal you, keke and
   taxi rental, and a safehouse in Fiamah, Sinkor, where you sleep and save.
 - **World:** day and night with street lights and moonlight, drifting clouds, sunsets, stars,
@@ -104,12 +110,12 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs nine checks: Godot import, start-up,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs ten checks: Godot import, start-up,
 the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
 shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
-damage, props, ragdolls, climbing, swimming) the Big Talk storyline and the weapons. It fails on any error or warning.
-`tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
+damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, and skills/perks/street life. It fails on any error or warning.
+`tests/world_audit.gd` sweeps the city for physics/road/prop/people problems; `tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout
 - `proto3d/main_city.tscn`, `main_city.gd` — the game; `proto3d/game/` — one script per system
