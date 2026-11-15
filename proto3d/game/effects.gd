@@ -5,6 +5,8 @@ extends Node3D
 
 signal cash_picked(amount: int)
 
+var audio                         # game_audio.gd
+
 var player: Node3D
 var _cash: Array = []          # [node, amount, time left]
 var _cash_mat: StandardMaterial3D
@@ -21,6 +23,8 @@ func _ready() -> void:
 
 
 func explosion(at: Vector3) -> void:
+	if audio != null:
+		audio.play("explosion", at, 8.0)
 	var ball := MeshInstance3D.new()
 	var sm := SphereMesh.new()
 	sm.radius = 1.0
@@ -90,6 +94,8 @@ func _process(delta: float) -> void:
 		mi.rotate_y(delta * 3.0)
 		if player != null and player.visible and mi.global_position.distance_to(player.global_position + Vector3(0, 0.3, 0)) < 1.3:
 			cash_picked.emit(c[1])
+			if audio != null:
+				audio.play("cash", mi.global_position, -2.0)
 			c[2] = 0.0
 		if c[2] <= 0.0:
 			mi.queue_free()
