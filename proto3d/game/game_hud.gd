@@ -160,7 +160,7 @@ func _build() -> void:
 	_cross.draw.connect(_draw_cross)
 	root.add_child(_cross)
 	var hint := _label(12, Color(1, 1, 1, 0.75))
-	hint.text = "WASD move  Shift run  Space jump/handbrake  Mouse aim  LMB shoot  F car  E use  T hire  V camera  Q weapon  M map  Esc pause"
+	hint.text = "WASD move  Shift run  Space jump/handbrake  Mouse aim  LMB shoot  F car  E use  H horn  R radio  T hire  V camera  Q weapon  M map  Esc pause"
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	hint.position = Vector2(12, -44)
 	root.add_child(hint)
@@ -261,6 +261,8 @@ func open_menu(title: String, text: String, options: Array, callback: Callable) 
 		_menu_buttons.add_child(b)
 	_menu.visible = true
 	menu_open = true
+	if main != null and main.audio != null:
+		main.audio.ui("ui_click")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_menu.reset_size()
 	_menu.position = (get_viewport().get_visible_rect().size - _menu.size) / 2.0
@@ -276,6 +278,8 @@ func choose(i: int) -> void:
 		var b := _menu_buttons.get_child(i) as Button
 		if b != null and b.disabled:
 			return
+	if main != null and main.audio != null:
+		main.audio.ui("ui_confirm" if i >= 0 else "ui_click")
 	close_menu()
 	if i >= 0 and _menu_cb.is_valid():
 		_menu_cb.call(i)

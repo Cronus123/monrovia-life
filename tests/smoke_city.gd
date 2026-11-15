@@ -10,6 +10,7 @@ var failures: Array[String] = []
 var car_start := Vector3.ZERO
 var loaded_before := 0
 var start_wait := 0
+var ending := 0                   # frames left of the tidy shutdown
 
 
 func _initialize() -> void:
@@ -28,6 +29,9 @@ func check(cond: bool, what: String) -> void:
 
 
 func _physics_process(_d: float) -> bool:
+	if ending > 0:
+		ending -= 1
+		return ending == 0
 	if m == null or m.get_script() == null:
 		print("SMOKECITY TEST FAILED: city scene failed to load")
 		return true
@@ -72,4 +76,7 @@ func _finish() -> bool:
 		print("SMOKECITY TEST PASSED (tiles %d)" % m.streamer.tiles.size())
 	else:
 		print("SMOKECITY TEST FAILED: ", ", ".join(failures))
-	return true
+	# tidy shutdown: free the game and let queued frees, tweens and timers finish
+	m.queue_free()
+	ending = 90
+	return false

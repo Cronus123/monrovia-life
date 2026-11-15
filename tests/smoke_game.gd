@@ -93,6 +93,70 @@ func run() -> void:
 	m.hud.toggle_map()
 	check(not m.hud.map_open, "hud", "full map closes")
 
+	# --- audio
+	for b in ["Music", "SFX", "Ambience", "Voice"]:
+		check(AudioServer.get_bus_index(b) >= 0, "audio", "bus %s exists" % b)
+	check(m.audio.streams.size() >= 28, "audio", "all sounds and music load (%d)" % m.audio.streams.size())
+
+	# --- settings
+	var gs := GameSettings.new()
+	gs.master = 0.5
+	gs.sensitivity = 1.7
+	gs.fov = 80.0
+	gs.save_file("user://smoke_settings.cfg")
+	var gs2 := GameSettings.new()
+	gs2.load_file("user://smoke_settings.cfg")
+	check(is_equal_approx(gs2.master, 0.5) and is_equal_approx(gs2.sensitivity, 1.7) and is_equal_approx(gs2.fov, 80.0), "settings", "settings save and load")
+	gs2.apply_system()
+	check(absf(AudioServer.get_bus_volume_db(AudioServer.get_bus_index("Master")) - linear_to_db(0.5)) < 0.1, "settings", "master volume applies")
+	gs2.apply_world(m)
+	check(is_equal_approx(m.rig.sensitivity, 1.7) and is_equal_approx(m.rig.cam.fov, 80.0), "settings", "sensitivity and field of view apply")
+	m.settings.apply_system()
+	m.settings.apply_world(m)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://smoke_settings.cfg"))
+
+	# --- input map and rebinding
+	var all_there := true
+	for a in InputDefaults.ACTIONS:
+		all_there = all_there and InputMap.has_action(a)
+	check(all_there, "input", "every action is in the Input Map")
+	var pad := false
+	for e in InputMap.action_get_events("p3_forward"):
+		pad = pad or e is InputEventJoypadMotion
+	check(pad, "input", "gamepad trigger/stick drives forward")
+	gs2.set_binding("p3_horn", "key:J")
+	check(InputDefaults.key_text("p3_horn") == "J", "input", "rebinding a key")
+	gs2.reset_bindings()
+	check(InputDefaults.key_text("p3_horn") == "H", "input", "reset controls")
+
+	# --- traffic lights and right of way
+	var sig: TrafficSignals = m.signals
+	check(sig.signals.size() > 0, "traffic", "traffic lights at major junctions (%d)" % sig.signals.size())
+	check(sig.junctions.size() > 0, "traffic", "right-of-way junctions (%d)" % sig.junctions.size())
+	var node: int = sig.signals.keys()[0]
+	var by_axis := {}
+	for e in sig.signals[node]["axis"]:
+		by_axis[sig.signals[node]["axis"][e]] = e
+	if by_axis.size() == 2:
+		var opposite := true
+		for tt in [1.0, 5.0, 15.0, 20.0]:
+			sig._t = tt - float(sig.signals[node]["offset"])
+			var a: int = sig.light(node, by_axis[0])
+			var b: int = sig.light(node, by_axis[1])
+			opposite = opposite and not (a == 0 and b == 0)
+		check(opposite, "traffic", "the two directions never both have green")
+		sig._t = 15.0 - float(sig.signals[node]["offset"])
+		check(sig.must_stop(node, by_axis[0], 15.0, null), "traffic", "a red light stops traffic")
+
+	# --- no real business names
+	var names := ""
+	for p in m.shops.pois + m.shops.dests:
+		names += String(p["name"]) + ";"
+	var real_found := false
+	for real in ["Total", "Conex", "NP station", "Mama Susu", "Musa Restaurant", "Stomach Station", "Golden Beach", "Bash Restaurant", "Lila Brown", "Mamba Point Hotel"]:
+		real_found = real_found or real in names
+	check(not real_found, "names", "shops and restaurants use made-up names")
+
 	# --- clock: night lights
 	st.time_min = 21.0 * 60.0
 	await seconds(1.2)
@@ -171,6 +235,20 @@ func run() -> void:
 	var cab = m.spawn_car("taxi", Transform3D(Basis.IDENTITY, m.player.global_position + Vector3(4, 0.8, 0)))
 	await frames(20)
 	m.enter_car(cab)
+	# drive-by: aim out of the left window
+	st.give_pistol(6)
+	var rounds := st.ammo
+	m.rig.yaw = PI / 2
+	m.rig._idle_look = -30.0                # hold the look-left (no auto recentre) for the test
+	await seconds(0.6)                      # camera finishes blending into the car view
+	m.weapons._cd = 0.0
+	m.weapons.try_fire_from_car()
+	check(st.ammo == rounds - 1, "weapons", "shooting from a car (drive-by)")
+	m.rig.yaw = 0.0
+	m.police.clear()
+	m.police.remove_all()
+	await seconds(0.3)
+	check(m.audio._engines.has(cab), "audio", "the player's car has an engine sound")
 	m.taxi.toggle()
 	check(m.taxi.hire, "taxi", "hire light on in a taxi")
 	await until(func(): return m.taxi.waiting.size() > 0, 15.0)
@@ -240,4 +318,8 @@ func run() -> void:
 		print("SMOKEGAME TEST PASSED (%d checks)" % passed)
 	else:
 		print("SMOKEGAME TEST FAILED: ", ", ".join(failures))
+	# tidy shutdown: free the game and let queued frees, tweens and timers finish
+	paused = false
+	m.queue_free()
+	await seconds(1.0)
 	done = true

@@ -74,6 +74,31 @@ func run() -> void:
 	await seconds(0.3)
 	shot("map")
 	m.hud.toggle_map()
+	# settings menu (from the pause menu)
+	m.open_settings(func(): pass)
+	await seconds(0.5)
+	shot("settings")
+	m.settings_menu.close()
+	get_root().get_tree().paused = false
+	await seconds(0.5)
+	# a traffic-light junction near downtown
+	var best := -1
+	var bd := INF
+	for nd in m.signals.signals:
+		var dd: float = (m.graph.nodes[nd] as Vector3).distance_to(m.streamer.spawn_point())
+		if dd < bd:
+			bd = dd
+			best = nd
+	var jpos: Vector3 = m.graph.nodes[best]
+	var ap: Array = m.signals.signals[best]["approaches"][0]
+	var dir_in: Vector3 = ap[1]
+	m.teleport_player(jpos - dir_in * 22.0 + Vector3(-dir_in.z, 0, dir_in.x) * (float(ap[2]) * 0.5 + 2.5))
+	await seconds(1.0)
+	await until(func(): return not m._busy, 60.0)
+	m.rig.yaw = atan2(-dir_in.x, -dir_in.z)
+	m.rig.pitch = -0.05
+	await measure("junction_on_foot", 4.0)
+	shot("traffic_lights")
 	# police chase: in a car on the road, 3 stars
 	var n: Dictionary = m.graph.nearest(m.player.global_position, 3)
 	var lp: Array = m.graph.lane_point(n["edge"], 5.0, 1)
@@ -92,6 +117,18 @@ func run() -> void:
 	await measure("police_chase_driving", 5.0)
 	shot("police_chase")
 	Input.action_release("p3_forward")
+	# drive-by: shooting out of the left window
+	m.state.give_pistol(30)
+	m.rig.yaw = PI / 2
+	m.rig._idle_look = -30.0
+	await seconds(0.6)
+	for k in 40:
+		m.weapons._cd = 0.0 if k % 8 == 0 else m.weapons._cd
+		m.weapons.try_fire_from_car()
+		await process_frame
+		if k == 24:
+			shot("driveby")
+	m.rig.yaw = 0.0
 	m.police.clear()
 	m.police.remove_all()
 	# night

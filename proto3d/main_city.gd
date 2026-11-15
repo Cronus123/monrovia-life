@@ -54,6 +54,10 @@ var shops := Shops.new()
 var taxi := TaxiJob.new()
 var missions := Missions.new()
 var hud := GameHud.new()
+var audio := GameAudio.new()
+var signals := TrafficSignals.new()
+var settings := GameSettings.new()
+var settings_menu := SettingsMenu.new()
 
 var _entering := 0.0
 var _enter_target = null
@@ -69,7 +73,8 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_rng.seed = 2026
 	auto_start = auto_start or DisplayServer.get_name() == "headless"
-	_setup_input()
+	settings.load_file()
+	settings.apply_system()                 # audio buses and volumes, display, key bindings
 	_build_environment()
 	streamer = StreamerScript.new()
 	streamer.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -85,11 +90,13 @@ func _ready() -> void:
 	player.spawn_point = spawn
 	player.process_mode = Node.PROCESS_MODE_PAUSABLE
 	# systems
-	for s in [state, clock, traffic, police, effects, weapons, shops, taxi, missions]:
+	for s in [state, clock, traffic, signals, police, effects, weapons, shops, taxi, missions, audio]:
 		s.process_mode = Node.PROCESS_MODE_PAUSABLE
 		add_child(s)
 	clock.setup(state, _sun, _env, streamer)
 	traffic.setup(graph, self, CAR_MODELS)
+	signals.setup(graph, traffic)
+	traffic.signals = signals
 	police.setup(state, graph, self, effects)
 	weapons.setup(state, self, police, effects)
 	shops.setup(state, self, police)
@@ -99,6 +106,12 @@ func _ready() -> void:
 	hud.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(hud)
 	hud.setup(state, self)
+	settings_menu.visible = false
+	settings_menu.process_mode = Node.PROCESS_MODE_ALWAYS
+	hud.add_child(settings_menu)
+	audio.process_mode = Node.PROCESS_MODE_ALWAYS
+	audio.setup(self)
+	effects.audio = audio
 	effects.cash_picked.connect(func(n: int): state.add_money(n); state.say("+" + GameState.money_text(n), Color("#f5c518"), 1.5))
 	state.player_down.connect(down_and_out)
 	police.arrested.connect(arrested)
@@ -113,6 +126,7 @@ func _ready() -> void:
 	effects.player = player
 	rig.follow(player, false)
 	await _prewarm()
+	settings.apply_world(self)
 	_spawn_start_car(spawn)
 	ready_done = true
 	if auto_start:
@@ -122,28 +136,6 @@ func _ready() -> void:
 
 
 # ------------------------------------------------------------------ setup
-func _setup_input() -> void:
-	var keys := {
-		"p3_forward": [KEY_W, KEY_UP], "p3_back": [KEY_S, KEY_DOWN], "p3_left": [KEY_A, KEY_LEFT],
-		"p3_right": [KEY_D, KEY_RIGHT], "p3_sprint": [KEY_SHIFT], "p3_jump": [KEY_SPACE],
-		"p3_interact": [KEY_F], "p3_camera": [KEY_V], "p3_use": [KEY_E], "p3_hire": [KEY_T], "p3_map": [KEY_M],
-		"p3_pause": [KEY_ESCAPE], "p3_weapon": [KEY_Q], "p3_fists": [KEY_1], "p3_pistol": [KEY_2],
-	}
-	for action in keys:
-		if InputMap.has_action(action):
-			continue
-		InputMap.add_action(action)
-		for k in keys[action]:
-			var ev := InputEventKey.new()
-			ev.physical_keycode = k
-			InputMap.action_add_event(action, ev)
-	if not InputMap.has_action("p3_fire"):
-		InputMap.add_action("p3_fire")
-		var mb := InputEventMouseButton.new()
-		mb.button_index = MOUSE_BUTTON_LEFT
-		InputMap.action_add_event("p3_fire", mb)
-
-
 func _build_environment() -> void:
 	var sky_mat := ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color("#2f6fb3")
@@ -263,11 +255,17 @@ func _prewarm() -> void:
 
 # ------------------------------------------------------------------ game flow
 func _start_menu() -> void:
-	var opts := [{"label": "New game"}]
+	var opts := [{"label": "New game"}, {"label": "Settings"}]
 	if SaveSystem.has_save():
 		opts.append({"label": "Continue"})
 	hud.open_menu("MONROVIA LIFE: STREETS", "A LibGamer community game. Steal rides, run jobs for Auntie Musu and stay ahead of the police from Mamba Point to Sinkor. Map data (c) OpenStreetMap contributors.", opts,
-		func(i: int): (continue_game() if i == 1 else new_game()))
+		func(i: int):
+			if i == 1:
+				open_settings(_start_menu)
+			elif i == 2:
+				continue_game()
+			else:
+				new_game())
 	get_tree().paused = true
 
 
@@ -420,6 +418,7 @@ func enter_car(c) -> void:
 		c.siren = false
 		police.add_stars(2)
 		state.say("You stole a police car!", Color("#ff5a6e"), 3.0)
+	audio.play("door", c.global_position, -2.0)
 	car = c
 	car.driven = true
 	car.controller = null
@@ -436,6 +435,7 @@ func exit_car(force: bool = false) -> void:
 	var c = car
 	c.driven = false
 	car = null
+	audio.play("door", c.global_position, -2.0)
 	player.global_position = c.exit_point()
 	player.set_active(true)
 	player.model.rotation.y = c.global_rotation.y
@@ -478,6 +478,7 @@ func _on_car_hit_person(c, person, _spd: float) -> void:
 
 
 func _on_car_crashed(c, other, impact: float) -> void:
+	audio.play("crash", c.global_position, clampf(-10.0 + impact * 0.6, -10.0, 6.0))
 	if c != car:
 		return
 	if other is TrafficCar:
@@ -630,13 +631,17 @@ func _process(delta: float) -> void:
 	var focus := focus_pos()
 	streamer.focus = focus
 	clock.focus = focus
+	signals.focus = focus
 	_water.global_position = Vector3(snappedf(focus.x, 50.0), 0.0, snappedf(focus.z, 50.0))
 	_people_t -= delta
 	if _people_t <= 0.0:
 		_people_t = 0.5
 		_manage_population()
-	if car == null and Input.is_action_pressed("p3_fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		weapons.try_fire()
+	if Input.is_action_pressed("p3_fire") and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.get_connected_joypads().size() > 0):
+		if car == null:
+			weapons.try_fire()
+		else:
+			weapons.try_fire_from_car()           # drive-by out of a side window
 
 
 func _physics_process(delta: float) -> void:
@@ -650,6 +655,10 @@ func _physics_process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not ready_done or _busy:
+		return
+	if settings_menu.visible:
+		if event is InputEventKey and (event as InputEventKey).pressed and (event as InputEventKey).physical_keycode == KEY_ESCAPE:
+			settings_menu.close()
 		return
 	if hud.menu_open:
 		if event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
@@ -685,6 +694,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_talk()
 	elif event.is_action_pressed("p3_hire"):
 		taxi.toggle()
+	elif event.is_action_pressed("p3_horn") and car != null:
+		audio.horn(car)
+	elif event.is_action_pressed("p3_radio") and car != null:
+		state.say("Radio: " + audio.next_station(), Color("#8ff0ea"), 2.0)
 	elif event.is_action_pressed("p3_weapon"):
 		if state.has_pistol:
 			state.select_weapon(GameState.PISTOL if state.weapon == GameState.FISTS else GameState.FISTS)
@@ -704,10 +717,27 @@ func _talk() -> void:
 			return
 
 
+## Settings screen; ack reopens the menu it came from.
+func open_settings(back: Callable) -> void:
+	get_tree().paused = true
+	hud.menu_open = true
+	settings_menu.open(settings, self)
+	if not settings_menu.closed.is_connected(_on_settings_closed):
+		settings_menu.closed.connect(_on_settings_closed)
+	settings_menu.set_meta("back", back)
+
+
+func _on_settings_closed() -> void:
+	hud.menu_open = false
+	var back: Callable = settings_menu.get_meta("back")
+	if back.is_valid():
+		back.call()
+
+
 func _pause_menu() -> void:
 	get_tree().paused = true
 	hud.open_menu("Paused", "Day %d, %s. Missions done: %d of %d." % [state.day(), state.clock_text(), state.mission_idx, missions.list.size()],
-		[{"label": "Resume"}, {"label": "Save game"}, {"label": "Controls"}, {"label": "Quit to desktop"}], _on_pause_choice)
+		[{"label": "Resume"}, {"label": "Save game"}, {"label": "Settings"}, {"label": "Quit to desktop"}], _on_pause_choice)
 
 
 func _on_pause_choice(i: int) -> void:
@@ -717,8 +747,7 @@ func _on_pause_choice(i: int) -> void:
 			save_game()
 			state.say("Game saved.")
 		2:
-			get_tree().paused = true
-			hud.open_menu("Controls", "WASD or arrows: move and drive.  Shift: run.  Space: jump / handbrake.  Mouse: look and aim, left click: shoot or punch.  F: get in, take or leave a car.  E: use shops and talk.  T: taxi hire light.  Q / 1 / 2: weapons.  V: camera.  M: map.  Esc: pause.", [], func(_j): get_tree().paused = false)
+			open_settings(_pause_menu)
 		3:
 			save_game()
 			get_tree().quit()
