@@ -15,6 +15,7 @@ var hits := 0                     # bullets taken (driver flees after a few)
 var abandoned := false
 var rng := RandomNumberGenerator.new()
 var _yaw := 0.0
+var _honk_t := 0.0
 
 
 func setup(g: RoadGraph, spot: Array, k: String, model_scene: PackedScene, seed_value: int) -> void:
@@ -66,6 +67,19 @@ func _physics_process(delta: float) -> void:
 			target = 0.0
 		elif near < 9.0:
 			target = minf(target, near - 2.5)
+	# traffic lights and right of way at the junction ahead: stop at the line (7 m before)
+	var remaining: float = float(graph.edges[edge]["len"]) - s
+	if not abandoned and remaining < 26.0 and traffic != null and traffic.signals != null:
+		if traffic.signals.must_stop(graph.end_node(edge, dir), edge, remaining, self):
+			target = minf(target, maxf(0.0, (remaining - 7.0) * 0.7))
+	# honk at a player who stands or parks in the way
+	if not abandoned and traffic != null and speed < 0.5 and target < 0.5 and traffic.player_blocking(pos, fwd):
+		_honk_t += delta
+		if _honk_t > 2.5:
+			_honk_t = -6.0
+			traffic.honk(self)
+	else:
+		_honk_t = maxf(0.0, _honk_t - delta) if _honk_t >= 0.0 else _honk_t + delta
 	var accel := 3.5 if target > speed else 9.0
 	speed = move_toward(speed, target, accel * delta)
 	s += speed * delta

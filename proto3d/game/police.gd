@@ -124,6 +124,7 @@ func _dispatch(delta: float, p: Vector3) -> void:
 	var t := Transform3D(Basis(Vector3.UP, atan2(-fwd.x, -fwd.z)), (lp[0] as Vector3) + Vector3(0, 0.6, 0))
 	var c: RigidBody3D = main.spawn_car("police", t)
 	c.controller = GraphDriverScript.new(graph, "pursue", player_node(), 24.0, rng.randi())
+	c.controller.viewer = main.player
 	c.siren = true
 	c.set_headlights(main.clock.darkness() > 0.35)
 	cars.append(c)
@@ -227,6 +228,7 @@ func _fire_at_player(from: Vector3, d: float) -> void:
 	var to := p if hit else p + Vector3(rng.randf_range(-2, 2), rng.randf_range(-0.5, 1.5), rng.randf_range(-2, 2))
 	effects.tracer(from, to)
 	effects.muzzle(from)
+	main.audio.play("gunshot", from, 2.0, 0.9)
 	if hit:
 		if main.car != null:
 			main.car.apply_damage(6.0)

@@ -7,7 +7,7 @@ extends Node3D
 
 signal car_taken(car: RigidBody3D, from_kind: String, was_police: bool)
 
-const MAX_CARS := 16
+var max_cars := 16               # Settings: graphics quality
 const SPAWN_MIN := 90.0
 const SPAWN_MAX := 260.0
 const DESPAWN := 330.0
@@ -15,6 +15,7 @@ const KINDS := [["taxi", 30], ["keke", 22], ["car", 18], ["suv", 12], ["truck", 
 const TrafficCarScript := preload("res://proto3d/game/traffic_car.gd")
 
 var graph: RoadGraph
+var signals: TrafficSignals
 var main                         # main_city.gd: player, car, peds, spawn_car()
 var models := {}
 var cars: Array[TrafficCar] = []
@@ -54,7 +55,7 @@ func _physics_process(delta: float) -> void:
 		if c.global_position.distance_to(f) > DESPAWN:
 			_remove(c)
 	_spawn_t -= delta
-	if _spawn_t <= 0.0 and cars.size() < MAX_CARS:
+	if _spawn_t <= 0.0 and cars.size() < max_cars:
 		_spawn_t = 0.35
 		var spot := graph.random_spot(f, SPAWN_MIN, SPAWN_MAX, rng)
 		if not spot.is_empty() and _spot_free(spot):
@@ -109,6 +110,17 @@ func _lane_dist(pos: Vector3, fwd: Vector3, reach: float, o: Vector3, half: floa
 		return INF
 	var side := absf(rel.dot(Vector3(-fwd.z, 0.0, fwd.x)))
 	return along if side < half else INF
+
+
+## Is the player (on foot or in a car) standing in this car's lane just ahead?
+func player_blocking(pos: Vector3, fwd: Vector3) -> bool:
+	var p: Vector3 = main.focus_pos()
+	return _lane_dist(pos, fwd, 9.0, p, 2.2) < INF
+
+
+func honk(c: TrafficCar) -> void:
+	if main.audio != null:
+		main.audio.play("horn_keke" if c.kind == "keke" else "horn_car", c.global_position, 1.0)
 
 
 func nearest_to(p: Vector3, max_d: float) -> TrafficCar:

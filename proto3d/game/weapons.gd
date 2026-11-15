@@ -14,6 +14,7 @@ var main                          # main_city.gd
 var police: Police
 var effects: Effects
 var _cd := 0.0
+var _hint_t := 0.0
 
 
 func setup(game_state: GameState, main_node, pol: Police, fx: Effects) -> void:
@@ -25,6 +26,7 @@ func setup(game_state: GameState, main_node, pol: Police, fx: Effects) -> void:
 
 func _process(delta: float) -> void:
 	_cd -= delta
+	_hint_t -= delta
 
 
 ## Called while the fire button is held (on foot only).
@@ -44,6 +46,31 @@ func try_fire() -> void:
 		_punch()
 
 
+## Drive-by: in a car with the pistol, shoot where the camera aims, out of the side or
+## rear windows (not through the windscreen).
+func try_fire_from_car() -> void:
+	if _cd > 0.0 or main.car == null or state.weapon != GameState.PISTOL:
+		return
+	var ray := _aim_ray()
+	var dir: Vector3 = ray[1]
+	var car = main.car
+	var fwd: Vector3 = -car.global_basis.z
+	var flat := Vector3(dir.x, 0, dir.z).normalized()
+	if flat.dot(Vector3(fwd.x, 0, fwd.z).normalized()) > 0.8:
+		if _hint_t <= 0.0:
+			_hint_t = 6.0
+			state.say("Aim out of a side window to shoot from the car.")
+		return
+	if not state.use_ammo():
+		state.say("Out of ammo.")
+		_cd = 0.5
+		return
+	_cd = PISTOL_CD
+	var side: Vector3 = car.global_basis.x * signf(flat.dot(car.global_basis.x))
+	var muzzle: Vector3 = car.global_position + Vector3(0, 1.3, 0) + side * 1.0
+	_fire_ray(ray[0], dir, muzzle, [car.get_rid()])
+
+
 func _aim_ray() -> Array:
 	var cam: Camera3D = main.rig.cam
 	var vp := cam.get_viewport().get_visible_rect().size
@@ -61,14 +88,19 @@ func _shoot() -> void:
 	player.model.rotation.y = atan2(-dir.x, -dir.z)
 	player.body.play("shoot")
 	var muzzle: Vector3 = player.global_position + Vector3(0, 1.35, 0) + Vector3(dir.x, 0, dir.z).normalized() * 0.5
-	var q := PhysicsRayQueryParameters3D.create(from + dir * 1.5, from + dir * RANGE, 1 | 2 | 4 | 8, [player.get_rid()])
+	_fire_ray(from, dir, muzzle, [player.get_rid()])
+
+
+func _fire_ray(from: Vector3, dir: Vector3, muzzle: Vector3, exclude: Array[RID]) -> void:
+	var q := PhysicsRayQueryParameters3D.create(from + dir * 1.5, from + dir * RANGE, 1 | 2 | 4 | 8, exclude)
 	var hit: Dictionary = main.get_world_3d().direct_space_state.intersect_ray(q)
 	var end: Vector3 = hit.position if not hit.is_empty() else from + dir * RANGE
 	effects.tracer(muzzle, end)
 	effects.muzzle(muzzle)
-	main.scare_people(player.global_position, 25.0)
+	main.audio.play("gunshot", muzzle, 4.0)
+	main.scare_people(muzzle, 25.0)
 	if state.stars == 0 and randf() < 0.3:
-		police.crime(1, player.global_position)
+		police.crime(1, muzzle)
 	if not hit.is_empty():
 		_hit(hit.collider, 40.0, 18.0)
 
@@ -80,6 +112,7 @@ func _punch() -> void:
 	var at: Vector3 = player.global_position + fwd * 0.9
 	for w in main.all_walkers():
 		if w != player and not w.is_down() and w.global_position.distance_to(at) < 0.9:
+			main.audio.play("punch", at, 0.0)
 			_hit(w, 25.0, 0.0)
 			return
 
