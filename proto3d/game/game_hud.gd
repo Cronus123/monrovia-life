@@ -273,6 +273,11 @@ func open_menu(title: String, text: String, options: Array, callback: Callable) 
 	await get_tree().process_frame               # re-centre once the container has sized itself
 	if is_instance_valid(_menu):
 		_menu.position = (get_viewport().get_visible_rect().size - _menu.size) / 2.0
+		# keyboard arrows / gamepad d-pad: start on the first button that can be pressed
+		for b in _menu_buttons.get_children():
+			if b is Button and not (b as Button).disabled and not b.is_queued_for_deletion():
+				(b as Button).grab_focus()
+				break
 
 
 func choose(i: int) -> void:

@@ -5,6 +5,8 @@ extends Node3D
 ## and the police HQ. Draws a marker over each, offers the interaction prompt, and runs
 ## the menus from proto3d/game/data/shops.json.
 
+signal bought(action: String, poi_id: String)
+
 const COLORS := {"home": Color.WHITE, "mission": Color("#f5c518"), "guns": Color("#c0c6cc"), "spray": Color("#2b5fb3"),
 	"food": Color("#1aa39e"), "park": Color("#f5c518"), "garage": Color("#ef7d22"), "hospital": Color("#ff5a6e"),
 	"police": Color("#5aa9ff")}
@@ -173,6 +175,7 @@ func _buy(it: Dictionary, q: Dictionary) -> void:
 	if not state.spend(price(it)):
 		return
 	main.perks.add_rep("shop_buy")
+	bought.emit(String(it["action"]), String(q.get("id", "")))
 	match String(it["action"]):
 		"pistol":
 			state.give_pistol(int(it["rounds"]))

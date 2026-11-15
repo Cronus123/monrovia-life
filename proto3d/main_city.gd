@@ -49,6 +49,11 @@ var cars: Array = []              # physics cars near the player (parked, police
 var peds: Array = []
 var ready_done := false
 var auto_start := false           # tests: skip the start menu
+var title_mode := false           # run by the title screen (proto3d/title.gd): flyover until a game starts
+var flyover_cam: Camera3D = null
+var flyover_focus := Vector3.ZERO   # where the world streams around during the flyover
+var start_car = null              # the taxi parked by the spawn point
+var save_path := SaveSystem.PATH   # tests point this into tests/output
 # systems
 var state := GameState.new()
 var clock := WorldClock.new()
@@ -64,7 +69,9 @@ var audio := GameAudio.new()
 var big_talk = BigTalkScript.new()
 var wheel = WheelScript.new()          # weapon wheel + weapon widget
 var street_life = StreetLifeScript.new()   # stall sellers, chatting groups, kids' football
-var perks = PerksScript.new()              # skills that grow with use, unlockable perks     # Big Talk Dweh, the (fictional) politician's storyline
+var perks = PerksScript.new()              # skills that grow with use, unlockable perks
+var tutorial := Tutorial.new()            # "Welcome to Monrovia", the first mission on a new game
+var bug_report := BugReport.new()         # F8: playtest bug report (saved locally)
 var signals := TrafficSignals.new()
 var settings := GameSettings.new()
 var settings_menu := SettingsMenu.new()
@@ -82,7 +89,7 @@ var _busy := false                # respawning
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_rng.seed = 2026
-	auto_start = auto_start or DisplayServer.get_name() == "headless"
+	auto_start = (auto_start or DisplayServer.get_name() == "headless") and not title_mode
 	settings.load_file()
 	settings.apply_system()                 # audio buses and volumes, display, key bindings
 	_build_environment()
@@ -134,6 +141,11 @@ func _ready() -> void:
 	wheel.process_mode = Node.PROCESS_MODE_PAUSABLE
 	hud.add_child(wheel)
 	wheel.setup(self)
+	tutorial.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(tutorial)
+	tutorial.setup(self)
+	bug_report.main = self
+	add_child(bug_report)
 	big_talk.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(big_talk)
 	big_talk.setup(state, self, shops, police)
@@ -161,8 +173,50 @@ func _ready() -> void:
 	ready_done = true
 	if auto_start:
 		new_game()
+	elif title_mode:
+		_enter_title()
 	else:
 		_start_menu()
+
+
+# ------------------------------------------------------------------ title screen
+## Behind the title screen: no player, no HUD, a camera the title screen flies around,
+## and the city streaming around flyover_focus (traffic and people still live).
+func _enter_title() -> void:
+	hud.visible = false
+	player.set_active(false)
+	rig.process_mode = Node.PROCESS_MODE_DISABLED
+	flyover_cam = Camera3D.new()
+	flyover_cam.fov = 60.0
+	flyover_cam.far = 2500.0
+	add_child(flyover_cam)
+	flyover_cam.make_current()
+	flyover_focus = player.spawn_point
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## From the title screen: start a new game or continue the saved one.
+func start_from_title(continue_saved: bool) -> void:
+	title_mode = false
+	if flyover_cam != null:
+		flyover_cam.queue_free()
+		flyover_cam = null
+	get_tree().paused = false
+	rig.process_mode = Node.PROCESS_MODE_PAUSABLE
+	rig.cam.make_current()
+	player.set_active(true)
+	hud.visible = true
+	if continue_saved:
+		continue_game()
+	else:
+		teleport_player(player.spawn_point)
+		new_game()
+
+
+func quit_to_title() -> void:
+	save_game()
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://proto3d/title.tscn")
 
 
 # ------------------------------------------------------------------ setup
@@ -317,22 +371,29 @@ func _start_menu() -> void:
 
 func new_game() -> void:
 	get_tree().paused = false
+	clock.advance(0.0)
+	# the tests start straight into the game (auto_start): no tutorial there
+	if settings.tutorial and not state.tutorial_done and not auto_start:
+		tutorial.start()
+		return
+	state.tutorial_done = true
 	state.say("Welcome home, Kollie. Auntie Musu is waiting at Waterside (M on your map).", Color.WHITE, 7.0)
 	state.say("F: take a car   E: use   Mouse: aim and shoot   M: map", Color.WHITE, 7.0)
-	clock.advance(0.0)
 
 
 func continue_game() -> void:
 	get_tree().paused = false
-	var pos = SaveSystem.load_into(state)
+	var pos = SaveSystem.load_into(state, save_path)
 	clock.advance(0.0)
 	if pos != null:
 		teleport_player(pos)
 	state.say("Welcome back to Monrovia.")
+	if not state.tutorial_done and settings.tutorial:
+		tutorial.start()                         # saved part-way through it: from the top
 
 
 func save_game() -> void:
-	SaveSystem.save(state, player.global_position if car == null else car.global_position)
+	SaveSystem.save(state, player.global_position if car == null else car.global_position, save_path)
 
 
 func teleport_player(pos: Vector3) -> void:
@@ -418,6 +479,7 @@ func _spawn_start_car(at: Vector3) -> void:
 	var t := Transform3D(Basis(Vector3.UP, best[3]), Vector3(best[0], best[1] + 0.3, best[2])) if best != null else Transform3D(Basis.IDENTITY, at + Vector3(4.0, 0.5, 0.0))
 	var c = spawn_car("taxi", t)
 	c.set_meta("keep", true)
+	start_car = c
 
 
 func rent_vehicle(kind: String, near: Vector3) -> void:
@@ -568,6 +630,8 @@ func all_walkers() -> Array:
 	out.append_array(peds)
 	out.append_array(police.cops)
 	out.append_array(taxi.waiting)
+	if tutorial.dummy != null and is_instance_valid(tutorial.dummy):
+		out.append(tutorial.dummy)
 	return out
 
 
@@ -646,6 +710,8 @@ func _manage_population() -> void:
 
 # ------------------------------------------------------------------ queries used by the HUD and systems
 func focus_pos() -> Vector3:
+	if flyover_cam != null:
+		return flyover_focus
 	return car.global_position if car != null else player.global_position
 
 
@@ -656,6 +722,8 @@ func heading() -> float:
 
 
 func target_pos():
+	if tutorial.active:
+		return tutorial.target()
 	if missions.active():
 		return missions.target()
 	if big_talk.active():
@@ -666,6 +734,8 @@ func target_pos():
 
 
 func objective_text() -> String:
+	if tutorial.active:
+		return tutorial.objective()
 	if missions.active():
 		return missions.objective()
 	if big_talk.active() or big_talk.blocks_missions():
@@ -711,7 +781,7 @@ func _process(delta: float) -> void:
 	if _people_t <= 0.0:
 		_people_t = 0.5
 		_manage_population()
-	if Input.is_action_pressed("p3_fire") and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.get_connected_joypads().size() > 0):
+	if not title_mode and Input.is_action_pressed("p3_fire") and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.get_connected_joypads().size() > 0):
 		if car == null:
 			weapons.try_fire()
 		else:
@@ -728,13 +798,17 @@ func _physics_process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not ready_done or _busy:
+	if not ready_done or _busy or title_mode:
 		return
 	if settings_menu.visible:
 		if event is InputEventKey and (event as InputEventKey).pressed and (event as InputEventKey).physical_keycode == KEY_ESCAPE:
 			settings_menu.close()
 		return
 	if hud.menu_open:
+		if event is InputEventJoypadButton and event.is_action_pressed("ui_cancel"):     # gamepad B
+			hud.close_menu()
+			get_tree().paused = false
+			return
 		if event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
 			var k := (event as InputEventKey).physical_keycode
 			if k == KEY_ESCAPE:
@@ -832,22 +906,25 @@ func _on_settings_closed() -> void:
 func _pause_menu() -> void:
 	get_tree().paused = true
 	hud.open_menu("Paused", "Day %d, %s. Missions done: %d of %d." % [state.day(), state.clock_text(), state.mission_idx, missions.list.size()],
-		[{"label": "Resume"}, {"label": "Save game"}, {"label": "Settings"}, {"label": "Quit to desktop"}, {"label": "Skills & perks"}], _on_pause_choice)
+		[{"label": "Resume"}, {"label": "Settings"}, {"label": "Save game"}, {"label": "Skills & perks"},
+			{"label": "Quit to title (saves)"}, {"label": "Quit to desktop (saves)"}], _on_pause_choice)
 
 
 func _on_pause_choice(i: int) -> void:
 	get_tree().paused = false
 	match i:
 		1:
+			open_settings(_pause_menu)
+		2:
 			save_game()
 			state.say("Game saved.")
-		2:
-			open_settings(_pause_menu)
 		3:
+			_perks_screen()
+		4:
+			quit_to_title()
+		5:
 			save_game()
 			get_tree().quit()
-		4:
-			_perks_screen()
 
 
 ## Skills (level and progress) and perks (unlocked, or what they still need).

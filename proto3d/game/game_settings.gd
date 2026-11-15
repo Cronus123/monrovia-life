@@ -18,6 +18,7 @@ var vsync := true
 var sensitivity := 1.0
 var invert_y := false
 var fov := 70.0
+var tutorial := true               # "Welcome to Monrovia" on a new game
 var quality := 1                  # 0 low, 1 medium, 2 high
 var bindings := {}                # action -> keyboard/mouse spec ("key:W" / "mouse:1")
 
@@ -37,6 +38,7 @@ func load_file(path: String = PATH) -> void:
 	sensitivity = cf.get_value("gameplay", "sensitivity", sensitivity)
 	invert_y = cf.get_value("gameplay", "invert_y", invert_y)
 	fov = cf.get_value("gameplay", "fov", fov)
+	tutorial = cf.get_value("gameplay", "tutorial", tutorial)
 	bindings = cf.get_value("controls", "bindings", {})
 
 
@@ -53,6 +55,7 @@ func save_file(path: String = PATH) -> void:
 	cf.set_value("gameplay", "sensitivity", sensitivity)
 	cf.set_value("gameplay", "invert_y", invert_y)
 	cf.set_value("gameplay", "fov", fov)
+	cf.set_value("gameplay", "tutorial", tutorial)
 	cf.set_value("controls", "bindings", bindings)
 	cf.save(path)
 

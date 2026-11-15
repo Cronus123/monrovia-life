@@ -55,6 +55,7 @@ var bt_ending := ""                     # "", "expose" or "senator"
 var skill_xp := {}                      # skill -> xp
 var rep := 0                            # reputation
 var fares := 0                          # taxi fares delivered
+var tutorial_done := false              # "Welcome to Monrovia" finished or skipped
 var perks: Array = []                   # unlocked perk ids
 var cooldowns := {}                     # perk -> game minute (or day) it's ready again
 
@@ -218,7 +219,8 @@ func to_dict() -> Dictionary:
 	return {"money": money, "health": health, "armor": armor, "owned": owned, "clip": clip, "reserve": reserve,
 		"weapon": weapon, "mission_idx": mission_idx, "time_min": time_min,
 		"bt_stage": bt_stage, "bt_done": bt_done, "bt_posters": bt_posters, "bt_crossed": bt_crossed, "bt_ending": bt_ending,
-		"skill_xp": skill_xp, "rep": rep, "fares": fares, "perks": perks, "cooldowns": cooldowns}
+		"skill_xp": skill_xp, "rep": rep, "fares": fares, "perks": perks, "cooldowns": cooldowns,
+		"tutorial_done": tutorial_done}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -242,6 +244,7 @@ func from_dict(d: Dictionary) -> void:
 	mission_idx = int(d.get("mission_idx", 0))
 	time_min = float(d.get("time_min", 540.0))
 	bt_stage = int(d.get("bt_stage", 0))
+	tutorial_done = bool(d.get("tutorial_done", true))      # saves from before the tutorial: done
 	bt_done = Array(d.get("bt_done", []))
 	bt_posters = []
 	for i in d.get("bt_posters", []):

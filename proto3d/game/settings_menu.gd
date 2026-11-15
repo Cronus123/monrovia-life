@@ -40,6 +40,7 @@ func open(s: GameSettings, main_node) -> void:
 	done.text = "Done"
 	done.custom_minimum_size = Vector2(0, 36)
 	done.pressed.connect(close)
+	done.call_deferred("grab_focus")          # gamepad: something focused to start from
 	v.add_child(done)
 	visible = true
 	reset_size()
@@ -146,6 +147,10 @@ func _gameplay_tab() -> Control:
 	_row(g, "Field of view", _slider(settings.fov, 55.0, 95.0, 1.0, func(v: float):
 		settings.fov = v
 		settings.apply_world(main)))
+	_row(g, "Tutorial on a new game", _check(settings.tutorial, func(b: bool):
+		settings.tutorial = b
+		if not b and main.get("tutorial") != null and main.tutorial.active:
+			main.tutorial.skip()))
 	return g
 
 

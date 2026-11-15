@@ -252,7 +252,7 @@ func _hit(target: Object, person_damage: float, car_damage: float) -> void:
 		target.shot(person_damage, true, main.player.global_position)
 		if target.has_method("cops_may_shoot") or target.get("police") != null:
 			police.add_stars(1)                    # attacking an officer
-		elif not was_down:
+		elif not was_down and not target.get("is_dummy"):
 			police.crime(1, target.global_position)
 		if target.is_down() and not was_down and target.get("police") == null and randf() < 0.6:
 			effects.drop_cash(target.global_position, randi_range(10, 80))

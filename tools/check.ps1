@@ -20,6 +20,8 @@
    12. Driving                (tests/smoke_drive.gd: every vehicle laps a test ground: top speed,
                                 turns, a kerb hop, braking, reverse, handbrake slide recovery,
                                 auto-right off the roof; runs on a fixed 60 fps clock)
+   13. Playtest build         (tests/smoke_playtest.gd: title screen and menus, New Game, every
+                                tutorial step, pause menu, F8 bug report; writes only to tests/output)
   and fails (exit code 1) if any step prints a script error, engine error or warning,
   or if the smoke test does not print "SMOKE TEST PASSED".
 
@@ -52,7 +54,7 @@ $outDir = Join-Path $project "tests\output"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 # Lines that count as failures. Godot prints these to stdout/stderr.
-$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED|SMOKEWPN CHECK FAILED|SMOKEWPN TEST FAILED|SMOKEPERKS CHECK FAILED|SMOKEPERKS TEST FAILED|SMOKELEGS CHECK FAILED|SMOKELEGS TEST FAILED|SMOKEDRIVE CHECK FAILED|SMOKEDRIVE TEST FAILED)'
+$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED|SMOKEWPN CHECK FAILED|SMOKEWPN TEST FAILED|SMOKEPERKS CHECK FAILED|SMOKEPERKS TEST FAILED|SMOKELEGS CHECK FAILED|SMOKELEGS TEST FAILED|SMOKEDRIVE CHECK FAILED|SMOKEDRIVE TEST FAILED|SMOKEPLAY CHECK FAILED|SMOKEPLAY TEST FAILED)'
 
 # Engine messages that are not our bugs and recover by themselves. Jolt prints this one now
 # and then when physics steps run back to back (seen with the old car code too); it waits
@@ -97,7 +99,8 @@ $results = @(
     (Invoke-Step "9_smoke_weapons" @("--headless", "--path", $project, "--script", "res://tests/smoke_weapons.gd") "SMOKEWPN TEST PASSED"),
     (Invoke-Step "10_smoke_perks" @("--headless", "--path", $project, "--script", "res://tests/smoke_perks.gd") "SMOKEPERKS TEST PASSED"),
     (Invoke-Step "11_smoke_legs" @("--headless", "--path", $project, "--script", "res://tests/smoke_legs.gd") "SMOKELEGS TEST PASSED"),
-    (Invoke-Step "12_smoke_drive" @("--headless", "--fixed-fps", "60", "--path", $project, "--script", "res://tests/smoke_drive.gd") "SMOKEDRIVE TEST PASSED")
+    (Invoke-Step "12_smoke_drive" @("--headless", "--fixed-fps", "60", "--path", $project, "--script", "res://tests/smoke_drive.gd") "SMOKEDRIVE TEST PASSED"),
+    (Invoke-Step "13_smoke_playtest" @("--headless", "--path", $project, "--script", "res://tests/smoke_playtest.gd") "SMOKEPLAY TEST PASSED")
 )
 
 if ($results -contains $false) {

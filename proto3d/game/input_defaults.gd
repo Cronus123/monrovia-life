@@ -40,6 +40,7 @@ const ACTIONS := {
 	"p3_slot_6": ["Shotgun", ["key:6"], []],
 	"p3_map": ["Map", ["key:M"], ["joy:4"]],
 	"p3_pause": ["Pause", ["key:Escape"], ["joy:6"]],
+	"p3_bug_report": ["Bug report", ["key:F8"], []],
 }
 
 
