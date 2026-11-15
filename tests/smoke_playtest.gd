@@ -51,6 +51,12 @@ func run() -> void:
 	city.save_path = OUT + "/save.json"
 	city.bug_report.dir_root = OUT + "/bug_reports"
 	print("title screen")
+	# the Windows City export uses the "city3d" feature tag, which overrides the main scene
+	var cfg := ConfigFile.new()
+	cfg.load("res://project.godot")
+	check(String(cfg.get_value("application", "run/main_scene")) == "res://proto3d/title.tscn" \
+		and String(cfg.get_value("application", "run/main_scene.city3d")) == "res://proto3d/title.tscn",
+		"the title screen is the main scene (and for the city3d export)")
 	check(await until(func(): return city.ready_done, 120.0), "the city loads behind the title")
 	await seconds(0.5)
 	check(city.title_mode and city.flyover_cam != null and not city.hud.visible and not city.player.active,

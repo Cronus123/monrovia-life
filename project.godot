@@ -20,7 +20,7 @@ config/version="v0.4-playtest"
 run/main_scene="res://proto3d/title.tscn"
 config/features=PackedStringArray("4.7")
 run/main_scene.proto3d="res://proto3d/main_3d.tscn"
-run/main_scene.city3d="res://proto3d/main_city.tscn"
+run/main_scene.city3d="res://proto3d/title.tscn"
 run/main_scene.legacy2d="res://main.tscn"
 
 [display]
