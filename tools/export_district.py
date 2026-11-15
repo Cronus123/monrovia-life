@@ -153,10 +153,12 @@ def export_roads():
 
 
 def export_vehicles():
-    for kind in ("taxi", "car", "police", "keke", "suv"):
+    for kind in ("taxi", "car", "police", "keke", "suv", "sport", "truck", "van"):
         bpy.ops.wm.read_factory_settings(use_empty=True)
         if kind == "car":
             ms.sedan(ms.srgb("#c8173a"))
+        elif kind == "sport":
+            ms.sedan(ms.srgb("#c8173a"), L=4.5, Wd=1.95, H=0.55, cabin_len=2.0, cabin_x=-0.45, low=True)
         else:
             ms.VEHICLES[kind]()
         flatten_materials()

@@ -634,7 +634,9 @@ def main():
     hi = defaultdict(lambda: {"Terrain-col": Mesh(), "Roads-col": Mesh(), "Sidewalks-col": Mesh(),
                               "Buildings-col": Mesh(), "Props": Mesh()})
     lo = defaultdict(lambda: {"Lo": Mesh()})
-    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": []})
+    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": [], "lamps": []})
+    graph_ways = []      # for the traffic road graph
+    building_rings = []  # for the minimap
     UP = (0, 1, 0)
 
     # ---------------- roads
@@ -688,6 +690,9 @@ def main():
                 ramp = min(1.0, min(L[i], total - L[i]) / 30.0)
                 hs[i] = max(hs[i], hs[i] + (deck - hs[i]) * ramp)
         ys = [hv + 0.12 + rank * 0.006 for hv in hs]
+        if kind not in ("pedestrian", "track", "service"):
+            ow = t.get("oneway", "no")
+            graph_ways.append((kind, t.get("name", ""), 1 if ow in ("yes", "1", "true") else (-1 if ow == "-1" else 0), w, g, pts, ys))
         half = w / 2
         left, right = [], []
         for i in range(n):
@@ -765,6 +770,7 @@ def main():
                         x, y = e[1][0] - e[4] * 0.4, e[1][1] - e[5] * 0.4
                         if kind in MAJOR and k % 9 == 4 and side == (1 if (k // 9) % 2 == 0 else -1):
                             _lamp(hi[tk]["Props"], x, y, e[3] + 0.15, -e[4], -e[5])
+                            meta[tk]["lamps"].append([round(x - e[4] * 1.6, 2), round(e[3] + 6.6, 2), round(-(y - e[5] * 1.6), 2)])
                         if kind in ("trunk", "primary", "secondary") and k % 7 == 2 and hsh(x, y) < 0.5:
                             _palm(hi[tk]["Props"], x, y, e[3] + 0.15, hsh(x, y, 3))
                         if kind in ("residential", "unclassified", "tertiary") and k % 5 == 2 and hsh(x, y, 9) < 0.18:
@@ -853,6 +859,7 @@ def main():
         flat = levels >= 3 or area > 400
         roof = COL["roofcon"] if flat else (COL["rust"] if hsh(el["id"], 5) < 0.45 else COL["zinc"])
         tk = tile_of(cx, cy)
+        building_rings.append(ring)
         for mesh_set, wall_mat, roof_mat in ((hi[tk]["Buildings-col"], "Wall", "Roof"), (lo[tk]["Lo"], "LoVC", "LoVC")):
             for i in range(len(ring)):
                 a = ring[i]
@@ -937,7 +944,125 @@ def main():
     }
     with open(os.path.join(OUT, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)
+    nodes, edges = build_graph(graph_ways)
+    with open(os.path.join(OUT, "roads_graph.json"), "w") as f:
+        json.dump({"nodes": nodes, "edges": edges}, f, separators=(",", ":"))
+    print("road graph: %d junctions, %d road edges" % (len(nodes), len(edges)))
+    write_places(city, meta, landmarks, edges)
+    write_minimap(city, road_mask, building_rings)
     print("tiles: %d, %.1f MB of glb, landmarks: %d, done in %.0f s" % (len(manifest_tiles), total / 1e6, len(landmarks), time.time() - t_start))
+
+
+# ------------------------------------------------------------------ game data: road graph, places, minimap
+def build_graph(graph_ways):
+    """Junction graph of the drivable roads for traffic: nodes where roads meet or end,
+    edges = road pieces between them (points every ~8 m at road-surface height)."""
+    key = lambda x, y: (round(x * 2), round(y * 2))
+    count = defaultdict(int)
+    for kind, name, oneway, w, g, pts, ys in graph_ways:
+        for i, (x, y) in enumerate(g):
+            count[key(x, y)] += 2 if i in (0, len(g) - 1) else 1
+    ids, nodes, edges = {}, [], []
+
+    def node_id(x, y, z):
+        k = key(x, y)
+        if k not in ids:
+            ids[k] = len(nodes)
+            nodes.append([round(x, 2), round(z, 2), round(-y, 2)])
+        return ids[k]
+
+    for kind, name, oneway, w, g, pts, ys in graph_ways:
+        idx = [0]
+        for i in range(len(g) - 1):
+            L = math.hypot(g[i + 1][0] - g[i][0], g[i + 1][1] - g[i][1])
+            idx.append(idx[-1] + max(1, int(L / 4.0)))
+        start = 0
+        for vi in range(1, len(g)):
+            if count[key(*g[vi])] >= 2 or vi == len(g) - 1:
+                seg = list(range(idx[start], idx[vi] + 1))
+                keep = seg[::2]
+                if keep[-1] != seg[-1]:
+                    keep.append(seg[-1])
+                p = [[round(pts[j][0], 2), round(ys[j], 2), round(-pts[j][1], 2)] for j in keep]
+                a = node_id(g[start][0], g[start][1], ys[idx[start]])
+                b = node_id(g[vi][0], g[vi][1], ys[idx[vi]])
+                if a != b and len(p) >= 2:
+                    edges.append({"a": a, "b": b, "p": p, "w": w, "k": kind, "n": name, "o": oneway})
+                start = vi
+    return nodes, edges
+
+
+LANDMARK_FOR = {"executive_mansion": "Executive Mansion", "capitol": "Capitol Building", "jfk": "John F. Kennedy",
+                "hospital": "John F. Kennedy", "university": "University of Liberia", "centennial": "Centennial Pavilion",
+                "ducor": "Ducor", "mamba_point_hotel": "Mamba Point Hotel", "tubman_stadium": "Antoinette Tubman Stadium",
+                "police_hq": "National Police Headquarters"}
+
+
+def write_places(city, meta, landmarks, edges):
+    """Snaps the game's places (proto3d/game/data/places_src.json) to the nearest sidewalk
+    (or road) and writes them in game coordinates to proto3d/city/places.json."""
+    src = json.load(open(os.path.join(ROOT, "proto3d", "game", "data", "places_src.json"), encoding="utf-8"))
+    walk = np.array([p for m in meta.values() for path in m["paths"] for p in path], np.float64)
+    road = np.array([p for e in edges for p in e["p"]], np.float64)
+
+    def snap(x, z, pool):
+        d = (pool[:, 0] - x) ** 2 + (pool[:, 2] - z) ** 2
+        i = int(np.argmin(d))
+        return pool[i].tolist(), math.sqrt(d[i])
+
+    def place(entry):
+        lm = LANDMARK_FOR.get(entry.get("id", ""))
+        pos = None
+        if lm:
+            for L in landmarks:
+                if lm.lower() in L["name"].lower():
+                    pos = (L["pos"][0], L["pos"][2])
+        if pos is None:
+            x, y = city.local(entry["lat"], entry["lon"])
+            pos = (x, -y)
+        p, d = snap(pos[0], pos[1], walk)
+        if d > 120.0:
+            p, d = snap(pos[0], pos[1], road)
+        out = dict(entry)
+        out.pop("lat", None)
+        out.pop("lon", None)
+        out["pos"] = [round(p[0], 2), round(p[1], 2), round(p[2], 2)]
+        return out
+
+    res = {"poi": [place(e) for e in src["poi"]], "dest": [place(e) for e in src["dest"]], "district": []}
+    for e in src["district"]:
+        x, y = city.local(e["lat"], e["lon"])
+        res["district"].append({"name": e["name"], "pos": [round(x, 1), 0, round(-y, 1)]})
+    with open(os.path.join(OUT, "places.json"), "w", encoding="utf-8") as f:
+        json.dump(res, f, indent=1)
+    print("places: %d points of interest, %d destinations" % (len(res["poi"]), len(res["dest"])))
+
+
+def write_minimap(city, road_mask, rings):
+    """North-up map image of the built area at 4 m per pixel (water, land cover, buildings,
+    roads) for the HUD minimap and the full-screen map."""
+    MPP = 4.0
+    cover = np.repeat(np.repeat(city.cover, 2, 0), 2, 1)
+    water = np.repeat(np.repeat(city.water, 2, 0), 2, 1)
+    h, w = cover.shape
+    img = np.zeros((h, w, 3), np.uint8)
+    pal = {0: (176, 132, 98), 1: (104, 150, 78), 2: (92, 146, 70), 3: (62, 110, 52), 4: (70, 104, 64),
+           5: (222, 205, 160), 6: (170, 166, 158), 7: (180, 128, 94)}
+    for k, v in pal.items():
+        img[cover == k] = v
+    img[water] = (38, 108, 158)
+    bmask = np.zeros((h, w), bool)
+    for ring in rings:
+        fill_polygon(bmask, ring, True, city.xmin, city.ymin, MPP)
+    img[bmask] = (205, 196, 182)
+    rm = road_mask[: h * 2, : w * 2]
+    rm = rm.reshape(rm.shape[0] // 2, 2, rm.shape[1] // 2, 2).any(axis=(1, 3))
+    img[: rm.shape[0], : rm.shape[1]][rm] = (238, 238, 232)
+    write_png(os.path.join(OUT, "minimap.png"), img[::-1].copy())
+    info = {"x0": city.xmin, "z0": -city.ymax, "m_per_px": MPP, "w": w, "h": h}
+    with open(os.path.join(OUT, "minimap.json"), "w") as f:
+        json.dump(info, f)
+    print("minimap: %d x %d px" % (w, h))
 
 
 def _lamp(m, x, y, h, dx, dy):

@@ -36,3 +36,6 @@ proto3d/city/lo/
 proto3d/city/meta/
 proto3d/city/preview_landcover.png
 proto3d/city/manifest.json
+proto3d/city/roads_graph.json
+proto3d/city/places.json
+proto3d/city/minimap.*
