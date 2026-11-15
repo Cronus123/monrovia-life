@@ -1,0 +1,44 @@
+{
+ "_comment": "Auntie Musu's story. Each step has a type handled by proto3d/game/missions.gd: deliver_any_car, goto (optional timer), lose_police, destroy_vehicle, steal_vehicle, deliver_vehicle. Places refer to ids in places_src.json.",
+ "giver": "auntie",
+ "missions": [
+  {
+   "id": "wheels", "title": "Wheels for the Crew", "reward": 1500,
+   "intro": "Welcome back to Monrovia, Kollie. My crew needs wheels. Take any car and bring it to our garage at Slipway.",
+   "steps": [
+    {"type": "deliver_any_car", "target": "garage", "text": "Take any car (F) and bring it to the crew garage at Slipway."}
+   ]
+  },
+  {
+   "id": "pickup", "title": "Waterfront Pickup", "reward": 2500,
+   "intro": "A package is waiting for me at West Point Market. Collect it and get it to the Nancy B. Doe Market in Sinkor. You get two and a half minutes once it's in your hands.",
+   "steps": [
+    {"type": "goto", "target": "west_point_market", "text": "Go to West Point Market to collect the package."},
+    {"type": "goto", "target": "nancy_doe_market", "timer": 150, "text": "Deliver the package to the Nancy B. Doe Market!", "on_start": "Package collected. Go, go, go!"}
+   ]
+  },
+  {
+   "id": "heat", "title": "Heat on Capitol Hill", "reward": 3000,
+   "intro": "Police are asking questions about the garage. I told them it was you. Draw them away and lose them.",
+   "steps": [
+    {"type": "lose_police", "stars": 3, "text": "Lose the police. Break their line of sight, or use a respray shop."}
+   ]
+  },
+  {
+   "id": "rival", "title": "Sinkor Rival", "reward": 5000,
+   "intro": "The Fiamah boys keep sending a red sports car to scare my drivers in Sinkor. Find it and wreck it.",
+   "steps": [
+    {"type": "destroy_vehicle", "spawn": "rival_area", "vehicle": "sport", "color": "#c8173a", "text": "Find the red sports car around Fiamah and wreck it (ram it or shoot it)."}
+   ]
+  },
+  {
+   "id": "score", "title": "The Big Score", "reward": 10000,
+   "intro": "An armoured van is parked on a back street in Sinkor. Take it and bring it to the wharf at Slipway. Police will come fast.",
+   "steps": [
+    {"type": "steal_vehicle", "spawn": "van_spot", "vehicle": "van", "stars_on_take": 2, "text": "Steal the armoured van in Sinkor."},
+    {"type": "deliver_vehicle", "target": "slipway", "text": "Get the van to the Slipway wharf!"}
+   ]
+  }
+ ],
+ "finale": "Monrovia is yours now, Kollie. Thanks for playing this LibGamer demo!"
+}

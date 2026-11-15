@@ -1,0 +1,36 @@
+{
+ "_comment": "Shop menus by point-of-interest type (places_src.json). Each item's action is handled in proto3d/game/shops.gd.",
+ "guns": {
+  "title": "Weapon shop", "text": "Licensed dealer. Cash only.",
+  "items": [
+   {"label": "Pistol with 36 rounds", "cost": 1500, "action": "pistol", "rounds": 36},
+   {"label": "36 more rounds", "cost": 300, "action": "ammo", "rounds": 36},
+   {"label": "Body armour", "cost": 800, "action": "armor"}
+  ]
+ },
+ "food": {
+  "title": "", "text": "Hot food, fresh today. Eating restores your health.",
+  "items": [
+   {"label": "Kala and tea", "cost": 60, "action": "eat", "heal": 15},
+   {"label": "Rice and potato greens", "cost": 150, "action": "eat", "heal": 35},
+   {"label": "Rice and cassava leaf", "cost": 180, "action": "eat", "heal": 40},
+   {"label": "Fufu and pepper soup", "cost": 220, "action": "eat", "heal": 50},
+   {"label": "Palm butter and rice", "cost": 250, "action": "eat", "heal": 60}
+  ]
+ },
+ "park": {
+  "title": "", "text": "Rent a vehicle the legal way. It stays where you leave it.",
+  "items": [
+   {"label": "Rent a keke", "cost": 250, "action": "rent", "vehicle": "keke"},
+   {"label": "Rent a taxi", "cost": 700, "action": "rent", "vehicle": "taxi"}
+  ]
+ },
+ "home": {
+  "title": "Safehouse, Fiamah", "text": "A quiet room off Tubman Boulevard. Rest here to heal fully and save your progress.",
+  "items": [
+   {"label": "Rest and save", "cost": 0, "action": "rest"},
+   {"label": "Sleep until morning", "cost": 0, "action": "sleep"}
+  ]
+ },
+ "spray": {"cost": 400}
+}
