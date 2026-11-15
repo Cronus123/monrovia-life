@@ -1,8 +1,8 @@
 extends Node3D
 ## Streams the generated 1:1 Monrovia tiles (proto3d/city, from tools/build_osm_city.py)
 ## around a focus point (the player or the car being driven):
-##   within HI_RADIUS: detailed tile with collision, street signs, sidewalk paths, parking
-##   within LO_RADIUS: low-detail tile (no collision)
+##   within hi_radius: detailed tile with collision, street signs, sidewalk paths, parking
+##   within lo_radius: low-detail tile (no collision)
 ## Tiles are parsed on worker threads with GLTFDocument (they're kept as raw .glb files,
 ## not imported), collision shapes are built on the worker too, and only the final
 ## add_child happens on the main thread - a few per frame - so driving doesn't stutter.
@@ -10,8 +10,8 @@ extends Node3D
 signal tile_loaded(key: Vector2i, detailed: bool)
 
 const CITY_DIR := "res://proto3d/city/"
-const HI_RADIUS := 420.0
-const LO_RADIUS := 1300.0
+var hi_radius := 420.0          # detailed tiles (Settings: graphics quality)
+var lo_radius := 1300.0         # low-detail ring
 const MAX_JOBS := 3
 const ATTACH_PER_FRAME := 2
 const SHADER := preload("res://proto3d/city_surfaces.gdshader")
@@ -66,7 +66,9 @@ func tile_center(k: Vector2i) -> Vector3:
 
 
 ## Detailed tiles currently loaded around the focus (with collision).
-func detailed_loaded(radius: float = HI_RADIUS) -> int:
+func detailed_loaded(radius: float = -1.0) -> int:
+	if radius < 0.0:
+		radius = hi_radius
 	var n := 0
 	for k in tiles:
 		if tiles[k]["lod"] == 2 and _dist(k) < radius:
@@ -113,15 +115,15 @@ func _process(delta: float) -> void:
 func _update_wanted() -> void:
 	var want := {}
 	var fk := tile_key(focus)
-	var r := int(ceil(LO_RADIUS / tile_size)) + 1
+	var r := int(ceil(lo_radius / tile_size)) + 1
 	for t in manifest["tiles"]:
 		var k := Vector2i(t[0], t[1])
 		if absi(k.x - fk.x) > r or absi(k.y - fk.y) > r:
 			continue
 		var d := _dist(k)
-		if d < HI_RADIUS and _has_hi.has(k):
+		if d < hi_radius and _has_hi.has(k):
 			want[k] = 2
-		elif d < LO_RADIUS:
+		elif d < lo_radius:
 			want[k] = 1
 	# unload tiles no longer wanted
 	for k in tiles.keys():
@@ -200,7 +202,7 @@ func _attach(job: Dictionary) -> void:
 		return
 	# still wanted at this detail?
 	var d := _dist(k)
-	var still: int = 2 if (d < HI_RADIUS and _has_hi.has(k)) else (1 if d < LO_RADIUS else 0)
+	var still: int = 2 if (d < hi_radius and _has_hi.has(k)) else (1 if d < lo_radius else 0)
 	if still != job["lod"]:
 		node.queue_free()
 		return

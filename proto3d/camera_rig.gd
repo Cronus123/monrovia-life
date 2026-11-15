@@ -25,6 +25,9 @@ var arm_end: Node3D
 var _blend_from := Transform3D()
 var _blend_t := 1.0
 var _idle_look := 0.0
+var sensitivity := 1.0         # from Settings (1 = default)
+var invert_y := false
+const STICK_SPEED := 2.6       # rad/s at full right-stick deflection
 
 
 func _ready() -> void:
@@ -91,14 +94,20 @@ func _start_blend() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var rel: Vector2 = (event as InputEventMouseMotion).relative
-		yaw -= rel.x * MOUSE_SENS
-		pitch -= rel.y * MOUSE_SENS
+		yaw -= rel.x * MOUSE_SENS * sensitivity
+		pitch -= rel.y * MOUSE_SENS * sensitivity * (-1.0 if invert_y else 1.0)
 		_idle_look = 0.0
 
 
 func _process(delta: float) -> void:
 	if target == null:
 		return
+	if InputMap.has_action("p3_look_left"):          # gamepad right stick
+		var look := Input.get_vector("p3_look_left", "p3_look_right", "p3_look_up", "p3_look_down")
+		if look.length() > 0.05:
+			yaw -= look.x * STICK_SPEED * sensitivity * delta
+			pitch -= look.y * STICK_SPEED * 0.7 * sensitivity * delta * (-1.0 if invert_y else 1.0)
+			_idle_look = 0.0
 	var first := is_first_person()
 	pitch = clampf(pitch, -1.35, 1.2) if first else clampf(pitch, -1.2, 0.55)
 	# In a car the view drifts back behind the car when the mouse is left alone.
