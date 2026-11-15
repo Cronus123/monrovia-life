@@ -54,6 +54,7 @@ var flyover_cam: Camera3D = null
 var flyover_focus := Vector3.ZERO   # where the world streams around during the flyover
 var start_car = null              # the taxi parked by the spawn point
 var save_path := SaveSystem.PATH   # tests point this into tests/output
+var load_marks := {}              # start-up timings (s), reported by the browser benchmark
 # systems
 var state := GameState.new()
 var clock := WorldClock.new()
@@ -124,6 +125,8 @@ func _ready() -> void:
 	hud.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(hud)
 	hud.setup(state, self)
+	if title_mode:
+		hud.visible = false                 # the title screen covers the loading
 	settings_menu.visible = false
 	settings_menu.process_mode = Node.PROCESS_MODE_ALWAYS
 	hud.add_child(settings_menu)
@@ -159,15 +162,23 @@ func _ready() -> void:
 	traffic.car_taken.connect(_on_car_taken)
 	hud.menu_closed.connect(func(): get_tree().paused = hud.map_open)
 	_add_landmark_labels()
+	load_marks["setup_s"] = Time.get_ticks_msec() / 1000.0
 	while not streamer.is_area_ready(spawn, 140.0):
 		await get_tree().process_frame
+	load_marks["area_ready_s"] = Time.get_ticks_msec() / 1000.0
 	add_child(player)
 	player.global_position = spawn
 	player.knocked.connect(func(impulse: Vector3): state.hurt(impulse.length() * 2.5))
 	player.drowning.connect(func(amount: float): state.hurt(amount))
 	effects.player = player
 	rig.follow(player, false)
-	await _prewarm()
+	# Browser, title screen: shaders compile slowly the first time a page loads, so the
+	# warm-up runs behind the menu instead of before it (the menu shows ~30 s sooner).
+	var warm_later := OS.has_feature("web") and title_mode
+	if not warm_later:
+		await _prewarm()
+	if OS.has_feature("web"):
+		print("Monrovia ready in %.1f s (%.1f MB of city tiles downloaded)" % [Time.get_ticks_msec() / 1000.0, streamer.web_bytes / 1048576.0])
 	settings.apply_world(self)
 	_spawn_start_car(spawn)
 	ready_done = true
@@ -175,6 +186,9 @@ func _ready() -> void:
 		new_game()
 	elif title_mode:
 		_enter_title()
+		if warm_later:
+			await _prewarm()
+			load_marks["warm_s"] = Time.get_ticks_msec() / 1000.0
 	else:
 		_start_menu()
 
@@ -237,7 +251,8 @@ func apply_camera_effects(quality: int) -> void:
 
 func _build_environment() -> void:
 	var sky_mat := ShaderMaterial.new()
-	sky_mat.shader = preload("res://proto3d/sky.gdshader")
+	# the browser build uses lighter versions of the sky and sea (quick to compile in WebGL)
+	sky_mat.shader = load("res://proto3d/sky_web.gdshader" if OS.has_feature("web") else "res://proto3d/sky.gdshader")
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_64
@@ -277,7 +292,7 @@ func _build_environment() -> void:
 	plane.subdivide_depth = 300
 	_water.mesh = plane
 	var wm := ShaderMaterial.new()
-	wm.shader = preload("res://proto3d/water.gdshader")
+	wm.shader = load("res://proto3d/water_web.gdshader" if OS.has_feature("web") else "res://proto3d/water.gdshader")
 	_water.material_override = wm
 	_water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_water)
@@ -326,7 +341,8 @@ func _add_landmark_labels() -> void:
 ## compiles their shaders now instead of stuttering the first time each appears in play.
 func _prewarm() -> void:
 	var holder := Node3D.new()
-	rig.cam.add_child(holder)
+	var cam: Camera3D = get_viewport().get_camera_3d()
+	(cam if cam != null else rig.cam).add_child(holder)
 	holder.position = Vector3(0, 0, -2.0)
 	holder.scale = Vector3.ONE * 0.002
 	var x := 0.0
@@ -349,8 +365,11 @@ func _prewarm() -> void:
 	temp.set_headlights(true)
 	for i in 6:
 		await get_tree().process_frame
-	remove_car(temp)
-	holder.queue_free()
+	# (on the title screen New Game can free the flyover camera this hangs from meanwhile)
+	if is_instance_valid(temp):
+		remove_car(temp)
+	if is_instance_valid(holder):
+		holder.queue_free()
 
 
 # ------------------------------------------------------------------ game flow
@@ -905,9 +924,12 @@ func _on_settings_closed() -> void:
 
 func _pause_menu() -> void:
 	get_tree().paused = true
+	var opts := [{"label": "Resume"}, {"label": "Settings"}, {"label": "Save game"}, {"label": "Skills & perks"},
+		{"label": "Quit to title (saves)"}]
+	if not OS.has_feature("web"):
+		opts.append({"label": "Quit to desktop (saves)"})      # a browser tab is just closed
 	hud.open_menu("Paused", "Day %d, %s. Missions done: %d of %d." % [state.day(), state.clock_text(), state.mission_idx, missions.list.size()],
-		[{"label": "Resume"}, {"label": "Settings"}, {"label": "Save game"}, {"label": "Skills & perks"},
-			{"label": "Quit to title (saves)"}, {"label": "Quit to desktop (saves)"}], _on_pause_choice)
+		opts, _on_pause_choice)
 
 
 func _on_pause_choice(i: int) -> void:
@@ -953,3 +975,5 @@ func _perks_screen() -> void:
 
 func _exit_tree() -> void:
 	VehicleLook.release()
+
+

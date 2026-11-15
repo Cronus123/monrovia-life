@@ -120,6 +120,9 @@ func _log_tail() -> String:
 
 
 func _on_save() -> void:
+	if OS.has_feature("web"):
+		_download_report(_note.text)
+		return
 	var where := save_report(_note.text)
 	if where == "":
 		_status.text = "Couldn't write the report (disk full or no permission?)."
@@ -129,6 +132,21 @@ func _on_save() -> void:
 	_open.visible = true
 	_close.text = "Close"
 	_open.grab_focus()
+
+
+## Browser: there's no folder to open, so the report and screenshot are downloaded.
+func _download_report(note: String) -> void:
+	var stamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+	var text := "Monrovia Life %s bug report (browser)\n\nNOTE\n%s\n\n%s\nBrowser: %s\n" % [version(),
+		note.strip_edges() if note.strip_edges() != "" else "(no note)", _summary(),
+		str(JavaScriptBridge.eval("navigator.userAgent", true))]
+	JavaScriptBridge.download_buffer(text.to_utf8_buffer(), "monrovia-bug-%s.txt" % stamp, "text/plain")
+	if _shot != null:
+		JavaScriptBridge.download_buffer(_shot.save_png_to_buffer(), "monrovia-bug-%s.png" % stamp, "image/png")
+	_status.text = "Downloaded monrovia-bug-%s (.txt and .png). Send both to the developers." % stamp
+	_save.visible = false
+	_close.text = "Close"
+	_close.grab_focus()
 
 
 func _build() -> void:

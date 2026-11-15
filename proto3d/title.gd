@@ -26,6 +26,10 @@ func _ready() -> void:
 	city.title_mode = true
 	add_child(city)
 	_build_ui()
+	if WebBench.wanted():
+		var b := WebBench.new()
+		b.title = self
+		add_child(b)
 
 
 static func version() -> String:
@@ -228,17 +232,23 @@ func _build_ui() -> void:
 	_add_button("Settings", _on_settings)
 	_add_button("Controls", _on_controls)
 	_add_button("Credits", _on_credits)
-	_add_button("Quit", _on_quit)
+	if OS.has_feature("web"):
+		# browser saves live in the browser's storage: let players keep a copy / move it
+		if SaveSystem.has_save():
+			_add_button("Export save", _on_export_save)
+		_add_button("Import save", _on_import_save)
+	else:
+		_add_button("Quit", _on_quit)          # a browser tab is closed, not quit
 	# wrap focus top <-> bottom
 	_buttons[0].focus_neighbor_top = _buttons[0].get_path_to(_buttons[-1])
 	_buttons[-1].focus_neighbor_bottom = _buttons[-1].get_path_to(_buttons[0])
 
 	var ver := Label.new()
-	ver.text = version()
+	ver.text = version() + ("   ·   Browser version" if OS.has_feature("web") else "")
 	ver.add_theme_font_size_override("font_size", 16)
 	ver.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
 	ver.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	ver.offset_left = -220
+	ver.offset_left = -420
 	ver.offset_top = -40
 	ver.offset_right = -24
 	ver.offset_bottom = -14
@@ -316,3 +326,46 @@ func _styled_button(label: String) -> Button:
 	b.add_theme_color_override("font_pressed_color", NAVY)
 	b.mouse_entered.connect(func(): b.grab_focus())
 	return b
+
+
+# ------------------------------------------------------------------ browser saves
+var _import_cb: JavaScriptObject           # kept alive while the file picker is open
+
+
+func _on_export_save() -> void:
+	var bytes := FileAccess.get_file_as_bytes(SaveSystem.PATH)
+	if bytes.is_empty():
+		return
+	JavaScriptBridge.download_buffer(bytes, "monrovia-life-save.json", "application/json")
+
+
+func _on_import_save() -> void:
+	_import_cb = JavaScriptBridge.create_callback(_on_import_text)
+	JavaScriptBridge.get_interface("window").monroviaImportSave = _import_cb
+	JavaScriptBridge.eval("""(function(){var i=document.createElement('input');i.type='file';
+		i.accept='.json,application/json';i.onchange=function(){var f=i.files[0];if(!f)return;
+		f.text().then(function(t){window.monroviaImportSave(t);});};i.click();})();""", true)
+
+
+func _on_import_text(args: Array) -> void:
+	var text := String(args[0]) if args.size() > 0 else ""
+	if not import_save_text(text):
+		_show_overlay("[font_size=24][b]Import save[/b][/font_size]\n\nThat file isn't a Monrovia Life save.")
+		return
+	get_tree().reload_current_scene()         # the menu now offers Continue
+
+
+## Checks a save file's text and stores it as the save. Used by Import save (and tests).
+static func import_save_text(text: String, path: String = SaveSystem.PATH) -> bool:
+	var json := JSON.new()
+	if json.parse(text) != OK:              # (quietly: parse_string would log an error)
+		return false
+	var d = json.data
+	if typeof(d) != TYPE_DICTIONARY or not d.has("money") or not d.has("version"):
+		return false
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(text)
+	f.close()
+	return true

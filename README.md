@@ -79,6 +79,24 @@ note and saves a folder in the game's user data (`%APPDATA%/Godot/app_userdata/M
 (screenshot, report with version, place, position and FPS, and the end of the log). Nothing
 is uploaded: send the folder to the developers. The version is on the title screen.
 
+## Browser version
+`powershell -ExecutionPolicy Bypass -File tools\export_web.ps1` exports the **Web City** preset to
+`build\web-city\`: the page, the engine (`index.wasm`, about 38 MB, ~9 MB gzipped) and the game
+(`index.pck`, about 16 MB), plus the city tiles in `city\hi` and `city\lo` (650 files, ~280 MB)
+that the game downloads over HTTP as you move (about 12.5 MB for the starting area).
+It runs on the Compatibility (WebGL 2) renderer at the Low preset with lighter browser versions
+of the city, sky and sea shaders. Saves live in the browser; the title screen has Export save
+and Import save. F8 bug reports download a .txt and a .png.
+
+Upload the whole folder to any static host: no special headers (single-threaded build), .wasm
+served as `application/wasm`, files up to ~40 MB, about 660 files. Long cache times for
+`city/*.glb` and gzip/brotli compression help.
+
+Test it locally: `"<Blender>\5.3\python\bin\python.exe" -I tools\serve_web.py` and open
+http://127.0.0.1:8060/. `tools\bench_web.ps1` runs a first-visit benchmark in a fresh Microsoft
+Edge window (`?bench=1`: load time, FPS walking/sprinting/driving, download size, screenshots to
+`build\screens\web\`).
+
 ## Controls
 Every control can be changed in **Settings → Controls** (saved to `user://settings.cfg`).
 
@@ -121,11 +139,11 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs thirteen checks: Godot import, start-up,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs fourteen checks: Godot import, start-up,
 the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
 shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
-damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, skills/perks/street life, the leg animation, driving (every vehicle laps a test ground) and the playtest build (title screen, tutorial, pause menu, bug report). It fails on any error or warning.
+damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, skills/perks/street life, the leg animation, driving (every vehicle laps a test ground), the playtest build (title screen, tutorial, pause menu, bug report) and the browser build (tiles streamed over HTTP, export preset, browser shaders). It fails on any error or warning.
 `tests/world_audit.gd` sweeps the city for physics/road/prop/people problems; `tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout

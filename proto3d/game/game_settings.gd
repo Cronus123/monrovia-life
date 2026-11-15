@@ -25,6 +25,8 @@ var bindings := {}                # action -> keyboard/mouse spec ("key:W" / "mo
 
 func load_file(path: String = PATH) -> void:
 	var cf := ConfigFile.new()
+	if OS.has_feature("web"):
+		quality = 0                # browser: Low until the player picks otherwise
 	if cf.load(path) != OK:
 		return
 	master = cf.get_value("audio", "master", master)
@@ -68,7 +70,7 @@ func apply_system() -> void:
 	_bus("SFX", sfx)
 	_bus("Ambience", ambience)
 	_bus("Voice", sfx)
-	if DisplayServer.get_name() != "headless":
+	if DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 		if fullscreen:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
@@ -117,6 +119,10 @@ func apply_world(main) -> void:
 			main.streamer.detail_range = 320.0
 			main.streamer.grass_enabled = true
 			main.traffic.max_cars = 20
+	if OS.has_feature("web"):
+		# browser: everything in these rings is downloaded, so keep them tighter
+		main.streamer.hi_radius = minf(main.streamer.hi_radius, 300.0)
+		main.streamer.lo_radius = minf(main.streamer.lo_radius, 800.0)
 	# Forward+ screen-space effects (the Compatibility renderer ignores these)
 	var med := fplus and quality >= 1
 	var high := fplus and quality >= 2
@@ -155,6 +161,8 @@ func apply_world(main) -> void:
 ## (Vulkan). The renderer is chosen at start-up, so it's written to override.cfg next to
 ## the game and needs a restart. Returns true when a restart is needed.
 func write_renderer_override() -> bool:
+	if OS.has_feature("web"):
+		return false               # the browser build always runs the Compatibility renderer
 	var want := "gl_compatibility" if quality == 0 else "forward_plus"
 	var dir := ProjectSettings.globalize_path("res://") if OS.has_feature("editor") else OS.get_executable_path().get_base_dir()
 	var path := dir.path_join("override.cfg")

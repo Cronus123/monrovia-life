@@ -15,7 +15,20 @@ var lo_radius := 1300.0         # low-detail ring
 var detail_range := 260.0       # building details fade out beyond this (Settings: quality)
 const MAX_JOBS := 3
 const ATTACH_PER_FRAME := 1
+## Browser build: tile .glb files aren't in the game package (it would be 285 MB to download
+## before playing); they're fetched over HTTP from <page>/city/ as they're needed, and the
+## browser's HTTP cache keeps them. No threads on the web build, so each fetched tile is
+## parsed on the main thread, one per frame.
+var web := OS.has_feature("web")
+var web_base := ""                # e.g. https://play.libgamer.com/city/
+var web_bytes := 0               # downloaded so far (for the loading screen / report)
+var first_request_s := 0.0       # when the first tile was asked for / arrived (benchmark)
+var first_tile_s := 0.0
+var _parse_queue: Array = []
+var _web_failed := {}            # tile -> failed fetches (gives up after 3)
+const WEB_MAX_REQUESTS := 4
 const SHADER := preload("res://proto3d/city_surfaces.gdshader")
+const SHADER_WEB := preload("res://proto3d/city_surfaces_web.gdshader")   # quick to compile in browsers
 const PropsScript := preload("res://proto3d/props.gd")
 
 var manifest: Dictionary
@@ -35,6 +48,9 @@ const PROPS_PER_FRAME := 6
 
 
 func _ready() -> void:
+	if web:
+		hi_radius = 300.0           # until Settings apply: the first area is all downloaded
+		lo_radius = 800.0
 	manifest = JSON.parse_string(FileAccess.get_file_as_string(CITY_DIR + "manifest.json"))
 	tile_size = manifest["tile_size"]
 	for t in manifest["hi"]:
@@ -43,7 +59,7 @@ func _ready() -> void:
 	var kinds := {"Terrain": 0, "Road": 1, "Sidewalk": 2, "Wall": 3, "Roof": 4, "Props": 5, "Rail": 5, "LoVC": 5}
 	for n in kinds:
 		var m := ShaderMaterial.new()
-		m.shader = SHADER
+		m.shader = SHADER_WEB if web else SHADER
 		m.set_shader_parameter("kind", kinds[n])
 		_mats[n] = m
 	var paint := StandardMaterial3D.new()
@@ -112,6 +128,8 @@ func _dist_from(k: Vector2i, p: Vector3) -> float:
 
 
 func _process(delta: float) -> void:
+	if web and not _parse_queue.is_empty():
+		_load_tile(_parse_queue.pop_front())
 	# finish loaded jobs (a few per frame)
 	for _i in ATTACH_PER_FRAME:
 		if _ready_queue.is_empty():
@@ -150,11 +168,11 @@ func _update_wanted() -> void:
 	var todo: Array = []
 	for k in want:
 		var cur: int = tiles[k]["lod"] if tiles.has(k) else 0
-		if cur != want[k] and not _jobs.has(k):
+		if cur != want[k] and not _jobs.has(k) and int(_web_failed.get(k, 0)) < 3:
 			todo.append(k)
 	todo.sort_custom(func(a, b): return _dist(a) < _dist(b))
 	for k in todo:
-		if _jobs.size() >= MAX_JOBS:
+		if _jobs.size() >= (WEB_MAX_REQUESTS if web else MAX_JOBS):
 			break
 		_start_job(k, want[k])
 
@@ -163,6 +181,9 @@ func _start_job(k: Vector2i, lod: int) -> void:
 	var path := CITY_DIR + ("hi/" if lod == 2 else "lo/") + "t_%d_%d.glb" % [k.x, k.y]
 	var job := {"key": k, "lod": lod, "path": path, "result": null}
 	_jobs[k] = job
+	if web:
+		_fetch(job)
+		return
 	if DisplayServer.get_name() == "headless":
 		# The headless dummy renderer isn't thread-safe for mesh/material creation
 		# (the real renderers are), so tests load tiles on the main thread.
@@ -176,7 +197,8 @@ func _start_job(k: Vector2i, lod: int) -> void:
 
 ## Worker thread: parse the glb, build collision shapes, assign shared materials.
 func _load_tile(job: Dictionary) -> void:
-	var bytes := FileAccess.get_file_as_bytes(job["path"])
+	var bytes: PackedByteArray = job["bytes"] if job.has("bytes") else FileAccess.get_file_as_bytes(job["path"])
+	job.erase("bytes")
 	var node: Node3D = null
 	if not bytes.is_empty():
 		var doc := GLTFDocument.new()
@@ -462,3 +484,39 @@ func nearby(p: Vector3, radius: float, field: String) -> Array:
 		for e in tiles[k]["meta"].get(field, []):
 			out.append(e)
 	return out
+
+
+# ------------------------------------------------------------------ browser build
+## Where the tile files are: next to the page (the export copies proto3d/city/hi and lo
+## into <build>/city/). Set from the page's own address so it works on any host.
+func _web_base() -> String:
+	if web_base == "":
+		var href = JavaScriptBridge.eval("new URL('city/', document.baseURI).href", true)
+		web_base = String(href) if href != null else "city/"
+	return web_base
+
+
+func _fetch(job: Dictionary) -> void:
+	var req := HTTPRequest.new()
+	req.use_threads = false
+	req.timeout = 0.0              # no timeout: with slow first frames (shader compiles) a
+	                               # finished download can wait seconds to be noticed
+	add_child(req)
+	var rel: String = String(job["path"]).trim_prefix(CITY_DIR)
+	req.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body: PackedByteArray):
+		req.queue_free()
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+			print("city tile %s: HTTP %d (result %d), will retry" % [rel, code, result])
+			_web_failed[job["key"]] = int(_web_failed.get(job["key"], 0)) + 1
+			_jobs.erase(job["key"])               # tried again on the next update (3 times)
+			return
+		web_bytes += body.size()
+		if first_tile_s == 0.0:
+			first_tile_s = Time.get_ticks_msec() / 1000.0
+		job["bytes"] = body
+		_parse_queue.append(job))
+	if first_request_s == 0.0:
+		first_request_s = Time.get_ticks_msec() / 1000.0
+	if req.request(_web_base() + rel) != OK:
+		req.queue_free()
+		_jobs.erase(job["key"])
