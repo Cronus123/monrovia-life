@@ -325,6 +325,9 @@ func _build_tree() -> void:
 	playback = tree.get("parameters/playback")
 	tree.set("parameters/move/scale/scale", 1.0)
 	tree.set("parameters/move/aim/blend_amount", 0.0)
+	# A Transition has no current input until one is requested, and with none it outputs a
+	# frozen pose (the legs slide instead of walking), so start on standing.
+	set_stance("stand")
 
 
 ## The node path animation tracks use for the skeleton (e.g. "CharacterArmature/Skeleton3D").
