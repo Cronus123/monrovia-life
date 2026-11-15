@@ -632,9 +632,9 @@ def main():
     t_start = time.time()
     city = City()
     hi = defaultdict(lambda: {"Terrain-col": Mesh(), "Roads-col": Mesh(), "Sidewalks-col": Mesh(),
-                              "Buildings-col": Mesh(), "Props": Mesh()})
+                              "Buildings-col": Mesh(), "Props": Mesh(), "Details": Mesh()})
     lo = defaultdict(lambda: {"Lo": Mesh()})
-    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": [], "lamps": []})
+    meta = defaultdict(lambda: {"signs": [], "paths": [], "parking": [], "lamps": [], "shops": []})
     graph_ways = []      # for the traffic road graph
     building_rings = []  # for the minimap
     UP = (0, 1, 0)
@@ -860,14 +860,27 @@ def main():
         roof = COL["roofcon"] if flat else (COL["rust"] if hsh(el["id"], 5) < 0.45 else COL["zinc"])
         tk = tile_of(cx, cy)
         building_rings.append(ring)
-        for mesh_set, wall_mat, roof_mat in ((hi[tk]["Buildings-col"], "Wall", "Roof"), (lo[tk]["Lo"], "LoVC", "LoVC")):
-            for i in range(len(ring)):
-                a = ring[i]
-                b = ring[(i + 1) % len(ring)]
-                out = (b[1] - a[1], 0, b[0] - a[0])    # outward for CCW rings, in game space (z = -north)
-                mesh_set.quad(wall_mat, P(*a, base), P(*b, base), P(*b, top), P(*a, top), wall, out)
-            for i0, i1, i2 in earclip(ring):
-                mesh_set.tri(roof_mat, P(*ring[i0], top), P(*ring[i1], top), P(*ring[i2], top), roof, UP)
+        # low detail: plain walls and a flat top
+        lom = lo[tk]["Lo"]
+        for i in range(len(ring)):
+            a = ring[i]
+            b = ring[(i + 1) % len(ring)]
+            lom.quad("LoVC", P(*a, base), P(*b, base), P(*b, top), P(*a, top), wall, (b[1] - a[1], 0, b[0] - a[0]))
+        for i0, i1, i2 in earclip(ring):
+            lom.tri("LoVC", P(*ring[i0], top), P(*ring[i1], top), P(*ring[i2], top), roof, UP)
+        # detailed: walls, then a real roof and details
+        m = hi[tk]["Buildings-col"]
+        props = hi[tk]["Details"]
+        for i in range(len(ring)):
+            a = ring[i]
+            b = ring[(i + 1) % len(ring)]
+            out = (b[1] - a[1], 0, b[0] - a[0])    # outward for CCW rings, in game space (z = -north)
+            m.quad("Wall", P(*a, base), P(*b, base), P(*b, top), P(*a, top), wall, out)
+        if flat:
+            _flat_roof(m, props, ring, top, roof, wall, el["id"])
+        else:
+            _pitched_roof(m, ring, top, roof, el["id"])
+        _wall_details(m, props, meta[tk], ring, base, top, levels, wall, el["id"], downtown(cx, cy) or t.get("building") in ("commercial", "retail"), city, road_mask, RM)
         count += 1
     print("buildings:", count, "(%.0f s)" % (time.time() - t_start))
 
@@ -1086,6 +1099,217 @@ def _palm(m, x, y, h, r):
                P(ex - nx_, ey - ny_, h + ht - 1.2), P(ex + nx_, ey + ny_, h + ht - 1.2), COL["leaf"])
         m.quad("Props", P(x - nx_ * 0.3, y - ny_ * 0.3, h + ht), P(x + nx_ * 0.3, y + ny_ * 0.3, h + ht),
                P(ex + nx_, ey + ny_, h + ht - 1.2), P(ex - nx_, ey - ny_, h + ht - 1.2), COL["leaf"])
+
+
+# ------------------------------------------------------------------ building detail
+AWNING_COLS = [(0.78, 0.12, 0.16), (0.1, 0.35, 0.65), (0.12, 0.5, 0.3), (0.95, 0.7, 0.1), (0.9, 0.45, 0.1),
+               (0.55, 0.15, 0.45), (0.85, 0.85, 0.82)]
+SHOP_A = ["Mama Korto's", "Blessed Hands", "God's Time", "Small Small", "Peace Corner", "Ma Fatu", "Sweet Mother",
+          "Johnson & Sons", "Big Boss", "Lucky Star", "Ducor View", "Grace", "Freeport", "Kru Town", "Sinkor Sunrise",
+          "Tubman Corner", "Old Road", "Mesurado", "Lone Star", "Ma Musu", "Mr. Kollie", "Pepper Bush"]
+SHOP_B = ["Cookshop", "Phone Repair", "Provisions", "Pharmacy", "Barber Shop", "Tailoring", "Hardware",
+          "Mini Mart", "Electronics", "Beauty Salon", "Fashion", "Money Transfer", "Bakery", "Auto Parts",
+          "Printing", "Furniture", "Video Club", "Cold Store", "Generator Repair", "Building Materials"]
+
+
+def _obox(m, mat, cx, cy, ux, uy, hu, d0, d1, z0, z1, col):
+    """Box aligned to a wall: centre (cx, cy) on the wall line, u = unit along the wall,
+    n = (uy, -ux) outward; spans +-hu along u, d0..d1 outward, z0..z1 up."""
+    nx_, ny_ = uy, -ux
+    c = []
+    for z in (z0, z1):
+        for s, d in ((-hu, d0), (hu, d0), (hu, d1), (-hu, d1)):
+            c.append(P(cx + ux * s + nx_ * d, cy + uy * s + ny_ * d, z))
+    ng = lambda a, b: (a * ux + b * nx_, 0, -(a * uy + b * ny_))     # local (along, out) -> game direction
+    m.quad(mat, c[4], c[5], c[6], c[7], col, (0, 1, 0))
+    m.quad(mat, c[0], c[1], c[2], c[3], col, (0, -1, 0))
+    for a, b, n in ((0, 1, ng(0, -1)), (1, 2, ng(1, 0)), (2, 3, ng(0, 1)), (3, 0, ng(-1, 0))):
+        m.quad(mat, c[a], c[b], c[b + 4], c[a + 4], col, n)
+
+
+def _cyl(m, mat, x, y, r, z0, z1, col, sides=10):
+    pts = [(x + r * math.cos(k * math.tau / sides), y + r * math.sin(k * math.tau / sides)) for k in range(sides)]
+    for k in range(sides):
+        a, b = pts[k], pts[(k + 1) % sides]
+        mx, my = (a[0] + b[0]) / 2 - x, (a[1] + b[1]) / 2 - y
+        m.quad(mat, P(*a, z0), P(*b, z0), P(*b, z1), P(*a, z1), col, (mx, 0, -my))
+        m.tri(mat, P(x, y, z1 + r * 0.25), P(*a, z1), P(*b, z1), col, (0, 1, 0))
+
+
+def _shade(c, f):
+    return tuple(min(1.0, v * f) for v in c)
+
+
+def _inside(ring, x, y):
+    ins = False
+    for i in range(len(ring)):
+        a, b = ring[i], ring[i - 1]
+        if (a[1] > y) != (b[1] > y) and x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1] + 1e-12) + a[0]:
+            ins = not ins
+    return ins
+
+
+def _pitched_roof(m, ring, top, col, bid):
+    """Zinc roof with eaves overhanging the walls: a hip roof on rectangular houses, a
+    shallow pyramid on other shapes. Underside of the eaves is dark timber."""
+    o, pitch = 0.45, 0.32 + hsh(bid, 7) * 0.12
+    under = (0.32, 0.24, 0.17)
+    cx = sum(p[0] for p in ring) / len(ring)
+    cy = sum(p[1] for p in ring) / len(ring)
+    rect = None
+    if len(ring) == 4:
+        e = [(ring[(i + 1) % 4][0] - ring[i][0], ring[(i + 1) % 4][1] - ring[i][1]) for i in range(4)]
+        L = [math.hypot(*v) for v in e]
+        if min(L) > 1.0:
+            dot = abs(e[0][0] * e[1][0] + e[0][1] * e[1][1]) / (L[0] * L[1])
+            if dot < 0.2:
+                k = 0 if L[0] >= L[1] else 1
+                ux, uy = e[k][0] / L[k], e[k][1] / L[k]
+                rect = (ux, uy, (L[k] + L[k + 2]) / 4, (L[1 - k] + L[3 - k]) / 4)
+    if rect:
+        ux, uy, a, b = rect
+        vx, vy = -uy, ux
+        eave = top - o * pitch
+        Q = lambda su, sv: P(cx + ux * su * (a + o) + vx * sv * (b + o), cy + uy * su * (a + o) + vy * sv * (b + o), eave)
+        rl = max(a - b, 0.0)
+        rh = top + b * pitch
+        R = lambda su: P(cx + ux * su * rl, cy + uy * su * rl, rh)
+        if rl > 0.01:
+            m.quad("Roof", Q(-1, 1), Q(1, 1), R(1), R(-1), col, (0, 1, 0))
+            m.quad("Roof", Q(1, -1), Q(-1, -1), R(-1), R(1), col, (0, 1, 0))
+        else:
+            m.tri("Roof", Q(-1, 1), Q(1, 1), R(1), col, (0, 1, 0))
+            m.tri("Roof", Q(1, -1), Q(-1, -1), R(-1), col, (0, 1, 0))
+        m.tri("Roof", Q(1, 1), Q(1, -1), R(1), col, (0, 1, 0))
+        m.tri("Roof", Q(-1, -1), Q(-1, 1), R(-1), col, (0, 1, 0))
+        m.quad("Roof", Q(-1, -1), Q(1, -1), Q(1, 1), Q(-1, 1), under, (0, -1, 0))
+        return
+    rmin = min(math.hypot(p[0] - cx, p[1] - cy) for p in ring)
+    eave = top - o * pitch
+    apex = P(cx, cy, top + min(rmin, 6.0) * pitch)
+    q = []
+    for x, y in ring:
+        d = math.hypot(x - cx, y - cy) or 1.0
+        q.append((x + (x - cx) / d * o, y + (y - cy) / d * o))
+    for i in range(len(q)):
+        a, b = q[i], q[(i + 1) % len(q)]
+        m.tri("Roof", P(*a, eave), P(*b, eave), apex, col, (0, 1, 0))
+    for i0, i1, i2 in earclip(q):
+        m.tri("Roof", P(*q[i0], eave), P(*q[i1], eave), P(*q[i2], eave), under, (0, -1, 0))
+
+
+def _flat_roof(m, d, ring, top, col, wall, bid):
+    """Concrete roof slab with a parapet, and the usual roof clutter: black poly water
+    tanks on stands, a stair housing, sometimes a satellite dish."""
+    for i0, i1, i2 in earclip(ring):
+        m.tri("Roof", P(*ring[i0], top), P(*ring[i1], top), P(*ring[i2], top), col, (0, 1, 0))
+    ph, pt = 0.85, 0.22
+    cap = _shade(wall, 0.92)
+    for i in range(len(ring)):
+        a, b = ring[i], ring[(i + 1) % len(ring)]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 0.3:
+            continue
+        ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        _obox(d, "Props", (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ux, uy, L / 2, -pt, 0.03, top, top + ph, cap)
+    cx = sum(p[0] for p in ring) / len(ring)
+    cy = sum(p[1] for p in ring) / len(ring)
+    area = polygon_area(ring)
+    r = hsh(bid, 11)
+    spots = [(cx, cy)]
+    rmin = min(math.hypot(p[0] - cx, p[1] - cy) for p in ring)
+    if rmin > 4.0:
+        spots += [(cx + rmin * 0.5, cy), (cx - rmin * 0.5, cy + rmin * 0.3)]
+    tanks = 1 + int(r * 2.2) if area > 60 else 0
+    for k in range(min(tanks, len(spots))):
+        x, y = spots[k]
+        if not _inside(ring, x, y):
+            continue
+        rad = 0.7 + hsh(bid, 13 + k) * 0.35
+        _box(d, "Props", x - rad, y - rad, x + rad, y + rad, top, top + 1.1, (0.38, 0.38, 0.4))        # steel stand
+        _cyl(d, "Props", x, y, rad, top + 1.1, top + 1.1 + rad * 2.0, (0.08, 0.08, 0.09))           # poly tank
+    if area > 150 and rmin > 3.0:
+        sx, sy = cx - rmin * 0.45, cy - rmin * 0.35
+        if _inside(ring, sx, sy):
+            _box(d, "Props", sx - 1.3, sy - 1.6, sx + 1.3, sy + 1.6, top, top + 2.6, _shade(wall, 0.95))  # stair housing
+    if r > 0.7 and rmin > 2.0:
+        x, y = cx + rmin * 0.4, cy + rmin * 0.4
+        if _inside(ring, x, y):
+            _box(d, "Props", x - 0.04, y - 0.04, x + 0.04, y + 0.04, top, top + 1.2, (0.3, 0.3, 0.3))
+            _cyl(d, "Props", x, y, 0.45, top + 1.2, top + 1.25, (0.9, 0.9, 0.9), 8)
+
+
+def _wall_details(m, d, meta_t, ring, base, top, levels, wall, bid, commercial, city, road_mask, RM):
+    """Per wall: floor ledges, AC units, balconies; street-facing ground floors of
+    commercial buildings get a shopfront (dark glass, awning, signboard with a made-up
+    name in the tile meta)."""
+    ledge = _shade(wall, 0.85)
+    floors = max(1, int(round((top - base - 0.7) / 3.2)))
+    shop_done = 0
+    for i in range(len(ring)):
+        a, b = ring[i], ring[(i + 1) % len(ring)]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 2.5:
+            continue
+        ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        nx_, ny_ = uy, -ux
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        g = city.hm(mx, my)
+        # does this wall face a street?
+        rr = int((my + ny_ * 7.0 - city.ymin) / RM)
+        cc = int((mx + nx_ * 7.0 - city.xmin) / RM)
+        street = 0 <= rr < road_mask.shape[0] and 0 <= cc < road_mask.shape[1] and bool(road_mask[rr, cc])
+        # floor ledges / window sills
+        if floors >= 2 and L > 3.0:
+            for f in range(1, floors):
+                z = base + 0.4 + f * 3.2
+                if z < top - 0.5:
+                    _obox(d, "Props", mx, my, ux, uy, L / 2, 0.0, 0.16, z - 0.05, z + 0.1, ledge)
+        # balconies on residential upper floors facing the street
+        if floors >= 2 and street and not commercial and L > 5.0 and hsh(bid, i, 3) < 0.55:
+            w = min(L * 0.45, 4.5)
+            for f in range(1, floors):
+                z = base + 0.4 + f * 3.2
+                if z + 1.1 > top:
+                    break
+                _obox(d, "Props", mx, my, ux, uy, w / 2, 0.0, 1.1, z - 0.15, z, ledge)                      # slab
+                _obox(d, "Props", mx, my, ux, uy, w / 2, 1.0, 1.1, z, z + 1.0, _shade(wall, 1.05))          # balustrade
+                for s in (-1, 1):
+                    _obox(d, "Props", mx + ux * s * (w / 2 - 0.05), my + uy * s * (w / 2 - 0.05), ux, uy, 0.05, 0.0, 1.0, z, z + 1.0, _shade(wall, 1.05))
+        # AC units (split-system outdoor boxes) hung under windows
+        if L > 4.0:
+            for f in range(floors):
+                if hsh(bid, i, f, 5) < 0.18:
+                    s = (hsh(bid, i, f, 6) - 0.5) * (L - 2.0)
+                    z = base + 0.4 + f * 3.2 + 1.0 + (0.0 if f else 1.2)
+                    if z + 0.6 > top:
+                        continue
+                    _obox(d, "Props", mx + ux * s, my + uy * s, ux, uy, 0.42, 0.0, 0.32, z, z + 0.55, (0.86, 0.86, 0.84))
+                    _obox(d, "Props", mx + ux * s, my + uy * s, ux, uy, 0.28, 0.32, 0.34, z + 0.08, z + 0.47, (0.2, 0.2, 0.22))
+        # shopfront
+        if commercial and street and L > 5.0 and shop_done < 2 and top - base > 3.6:
+            shop_done += 1
+            w = min(L - 1.0, 9.0)
+            gz = g
+            _obox(d, "Props", mx, my, ux, uy, w / 2, 0.0, 0.06, gz + 0.2, gz + 2.7, (0.1, 0.13, 0.16))           # glass / shutters
+            ac = AWNING_COLS[int(hsh(bid, i, 9) * len(AWNING_COLS))]
+            z0, z1, depth = gz + 2.75, gz + 3.15, 1.8
+            # sloped awning, double sided
+            p0 = P(mx - ux * w / 2, my - uy * w / 2, z1)
+            p1 = P(mx + ux * w / 2, my + uy * w / 2, z1)
+            p2 = P(mx + ux * w / 2 + nx_ * depth, my + uy * w / 2 + ny_ * depth, z0)
+            p3 = P(mx - ux * w / 2 + nx_ * depth, my - uy * w / 2 + ny_ * depth, z0)
+            d.quad("Props", p0, p1, p2, p3, ac, (0, 1, 0))
+            d.quad("Props", p0, p1, p2, p3, _shade(ac, 0.6), (0, -1, 0))
+            _obox(d, "Props", mx, my, ux, uy, w / 2, depth - 0.02, depth + 0.02, z0 - 0.25, z0, _shade(ac, 0.8))     # valance
+            # signboard above the awning
+            sb = (0.95, 0.95, 0.92) if hsh(bid, i, 10) < 0.5 else AWNING_COLS[int(hsh(bid, i, 12) * len(AWNING_COLS))]
+            if gz + 4.1 < top:
+                _obox(d, "Props", mx, my, ux, uy, w * 0.42, 0.0, 0.12, gz + 3.25, gz + 4.05, sb)
+                name = SHOP_A[int(hsh(bid, i, 14) * len(SHOP_A))] + " " + SHOP_B[int(hsh(bid, i, 15) * len(SHOP_B))]
+                dark = sum(sb) < 1.6
+                meta_t["shops"].append([round(mx + nx_ * 0.14, 2), round(gz + 3.65, 2), round(-(my + ny_ * 0.14), 2),
+                                        round(math.atan2(nx_, -ny_), 3), round(w * 0.8, 2), name, 1 if dark else 0])
 
 
 def _box(m, mat, x0, y0, x1, y1, z0, z1, col):

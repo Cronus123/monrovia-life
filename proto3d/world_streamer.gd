@@ -12,6 +12,7 @@ signal tile_loaded(key: Vector2i, detailed: bool)
 const CITY_DIR := "res://proto3d/city/"
 var hi_radius := 420.0          # detailed tiles (Settings: graphics quality)
 var lo_radius := 1300.0         # low-detail ring
+var detail_range := 260.0       # building details fade out beyond this (Settings: quality)
 const MAX_JOBS := 3
 const ATTACH_PER_FRAME := 2
 const SHADER := preload("res://proto3d/city_surfaces.gdshader")
@@ -176,6 +177,12 @@ func _load_tile(job: Dictionary) -> void:
 				shapes.append([m, m.mesh.create_trimesh_shape()])
 			if String(m.name) == "Props":
 				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			elif String(m.name) == "Details":
+				# building clutter (ledges, tanks, AC units, awnings): fades out with distance
+				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				m.visibility_range_end = detail_range
+				m.visibility_range_end_margin = 30.0
+				m.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			elif String(m.name) in ["Lo", "Sidewalks-col", "Roads-col"]:
 				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var meta: Dictionary = {}
@@ -190,6 +197,7 @@ func _load_tile(job: Dictionary) -> void:
 func _job_done(job: Dictionary) -> void:
 	if job.has("task"):
 		WorkerThreadPool.wait_for_task_completion(job["task"])
+		job.erase("task")          # a task id may only be waited on once
 	_ready_queue.append(job)
 
 
@@ -249,6 +257,20 @@ func _free_tile(k: Vector2i) -> void:
 
 
 func _add_signs(tile: Node3D, meta: Dictionary) -> void:
+	# shop names on the signboards over shopfronts (made-up businesses)
+	for s in meta.get("shops", []):
+		var lab := Label3D.new()
+		lab.text = String(s[5]).to_upper()
+		lab.position = Vector3(s[0], s[1], s[2])
+		lab.rotation.y = s[3]
+		lab.font_size = 64
+		lab.outline_size = 0
+		lab.pixel_size = minf(0.006, float(s[4]) / maxf(1.0, lab.text.length() * 40.0))
+		lab.modulate = Color("#f4f1e8") if int(s[6]) == 1 else Color("#1d2430")
+		lab.double_sided = false
+		lab.shaded = true
+		lab.visibility_range_end = 90.0
+		tile.add_child(lab)
 	var green := _sign_mat()
 	for s in meta.get("signs", []):
 		var post := Node3D.new()
