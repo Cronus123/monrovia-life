@@ -21,6 +21,29 @@ var fov := 70.0
 var tutorial := true               # "Welcome to Monrovia" on a new game
 var quality := 1                  # 0 low, 1 medium, 2 high
 var bindings := {}                # action -> keyboard/mouse spec ("key:W" / "mouse:1")
+var control_scheme := 0           # InputMode.SCHEMES: 0 auto, 1 keyboard/mouse, 2 touch, 3 gamepad
+var light_mode := 0               # LIGHT: 0 auto (on for phones), 1 on, 2 off
+var render_scale := 0.0           # 3D resolution; 0 = auto (LIGHT_SCALE in light mode, else full)
+
+const LIGHT := ["Auto (on for phones)", "On", "Off"]
+const RENDER_SCALES := [0.0, 0.5, 0.67, 0.75, 0.85, 1.0]
+## Light mode (phones): a smaller 3D resolution, no shadows, a shorter streaming radius,
+## less traffic and fewer people. Settings can turn it off, or on for any device.
+const LIGHT_SCALE := 0.67
+const LIGHT_LIMITS := {"hi_radius": 220.0, "lo_radius": 560.0, "detail_range": 90.0,
+	"max_cars": 6, "peds": 6, "parked": 3, "street_people": 8}
+
+
+## Light mode in effect for this device (Auto follows DeviceProfile).
+func light_on() -> bool:
+	return light_mode == 1 or (light_mode == 0 and DeviceProfile.is_phone())
+
+
+## The 3D render scale in effect (Auto: LIGHT_SCALE in light mode, otherwise 1).
+func effective_render_scale() -> float:
+	if render_scale > 0.0:
+		return clampf(render_scale, 0.4, 1.0)
+	return LIGHT_SCALE if light_on() else 1.0
 
 
 func load_file(path: String = PATH) -> void:
@@ -42,6 +65,9 @@ func load_file(path: String = PATH) -> void:
 	fov = cf.get_value("gameplay", "fov", fov)
 	tutorial = cf.get_value("gameplay", "tutorial", tutorial)
 	bindings = cf.get_value("controls", "bindings", {})
+	control_scheme = clampi(int(cf.get_value("controls", "scheme", control_scheme)), 0, 3)
+	light_mode = clampi(int(cf.get_value("display", "light_mode", light_mode)), 0, 2)
+	render_scale = float(cf.get_value("display", "render_scale", render_scale))
 
 
 func save_file(path: String = PATH) -> void:
@@ -59,6 +85,9 @@ func save_file(path: String = PATH) -> void:
 	cf.set_value("gameplay", "fov", fov)
 	cf.set_value("gameplay", "tutorial", tutorial)
 	cf.set_value("controls", "bindings", bindings)
+	cf.set_value("controls", "scheme", control_scheme)
+	cf.set_value("display", "light_mode", light_mode)
+	cf.set_value("display", "render_scale", render_scale)
 	cf.save(path)
 
 
@@ -81,6 +110,8 @@ func apply_system() -> void:
 	InputDefaults.ensure()
 	for action in bindings:
 		set_binding(action, String(bindings[action]), false)
+	if InputMode.scheme != control_scheme or InputMode.serial == 0:
+		InputMode.set_scheme(control_scheme)
 
 
 ## Applies the in-world settings: camera and graphics quality.
@@ -123,6 +154,24 @@ func apply_world(main) -> void:
 		# browser: everything in these rings is downloaded, so keep them tighter
 		main.streamer.hi_radius = minf(main.streamer.hi_radius, 300.0)
 		main.streamer.lo_radius = minf(main.streamer.lo_radius, 800.0)
+	# light mode (phones by default): fewer pixels, no shadows, less of the city, traffic and people
+	var light := light_on()
+	var L := LIGHT_LIMITS
+	if light:
+		sun.shadow_enabled = false
+		main.streamer.hi_radius = minf(main.streamer.hi_radius, L["hi_radius"])
+		main.streamer.lo_radius = minf(main.streamer.lo_radius, L["lo_radius"])
+		main.streamer.detail_range = minf(main.streamer.detail_range, L["detail_range"])
+		main.streamer.grass_enabled = false
+		main.traffic.max_cars = mini(main.traffic.max_cars, L["max_cars"])
+	if main.get("ped_cap") != null:
+		main.ped_cap = int(L["peds"]) if light else main.PEDESTRIANS
+		main.parked_cap = int(L["parked"]) if light else main.PARKED
+	if main.get("street_life") != null and main.street_life.get("max_people") != null:
+		main.street_life.max_people = int(L["street_people"]) if light else main.street_life.MAX_PEOPLE
+	var vp: Viewport = main.get_viewport()
+	vp.scaling_3d_scale = effective_render_scale()
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	# Forward+ screen-space effects (the Compatibility renderer ignores these)
 	var med := fplus and quality >= 1
 	var high := fplus and quality >= 2

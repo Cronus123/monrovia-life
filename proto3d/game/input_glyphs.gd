@@ -1,10 +1,23 @@
 class_name InputGlyphs
 extends RefCounted
 ## Button names for on-screen prompts, from the live Input Map (so rebinding in Settings
-## shows up): keyboard/mouse as "[F]", gamepad (Xbox layout) as "(Y)". `pad` follows the
-## last device the player touched (InputGlyphs.note(event) from an _input handler).
+## shows up): keyboard/mouse as "[F]", gamepad (Xbox layout) as "(Y)", touch as the
+## on-screen button's name, "(Car)". `pad` / `touch` follow the active control scheme
+## (InputMode: the last device used, or the one fixed in Settings).
 
 static var pad := false
+static var touch := false
+
+## On-screen touch button names (TouchControls) per action.
+const TOUCH := {"p3_fire": "Shoot", "p3_jump": "Jump", "p3_aim": "Aim", "p3_interact": "Car",
+	"p3_use": "Use", "p3_weapon": "Weapon", "p3_wheel": "Weapon", "p3_reload": "Reload", "p3_crouch": "Crouch",
+	"p3_dodge": "Roll", "p3_horn": "Horn", "p3_radio": "Radio", "p3_hire": "Hire", "p3_pause": "II",
+	"p3_map": "Map", "p3_camera": "View", "p3_ability": "Perk", "p3_sprint": "Stick to the edge",
+	"p3_forward": "Stick", "p3_back": "Stick", "p3_left": "Stick", "p3_right": "Stick",
+	"p3_fists": "Weapon", "p3_pistol": "Weapon", "p3_slot_3": "Weapon", "p3_slot_4": "Weapon",
+	"p3_slot_5": "Weapon", "p3_slot_6": "Weapon"}
+## Gamepad actions that are a long press rather than a button of their own.
+const PAD_HOLD := {"p3_ability": "(hold View)"}
 
 const JOY := {JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "X", JOY_BUTTON_Y: "Y",
 	JOY_BUTTON_BACK: "View", JOY_BUTTON_START: "Menu", JOY_BUTTON_LEFT_STICK: "L3", JOY_BUTTON_RIGHT_STICK: "R3",
@@ -16,25 +29,25 @@ const MOUSE := {MOUSE_BUTTON_LEFT: "Left mouse", MOUSE_BUTTON_RIGHT: "Right mous
 	MOUSE_BUTTON_WHEEL_UP: "Wheel up", MOUSE_BUTTON_WHEEL_DOWN: "Wheel down"}
 ## Groups of actions shown as one glyph.
 const GROUPS := {
-	"move": ["[W A S D]", "(Left stick)"],
-	"look": ["[Mouse]", "(Right stick)"],
-	"drive": ["[W] [S] [A] [D]", "(RT) (LT) (Left stick)"],
+	"move": ["[W A S D]", "(Left stick)", "(Stick)"],
+	"look": ["[Mouse]", "(Right stick)", "(drag on the right)"],
+	"drive": ["[W] [S] [A] [D]", "(RT) (LT) (Left stick)", "(Stick)"],
 }
 
 
+## Kept for older callers: device tracking lives in InputMode now.
 static func note(event: InputEvent) -> void:
-	if event is InputEventJoypadButton:
-		pad = true
-	elif event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) > 0.5:
-		pad = true
-	elif event is InputEventKey or event is InputEventMouseButton:
-		pad = false
+	InputMode.note(event)
 
 
-## "[F]" or "(Y)" for an action (or a GROUPS name), "" if it has nothing on that device.
+## "[F]", "(Y)" or "(Car)" for an action (or a GROUPS name), "" if it has nothing on that device.
 static func of(action: String) -> String:
 	if GROUPS.has(action):
-		return GROUPS[action][1 if pad else 0]
+		return GROUPS[action][2 if touch else (1 if pad else 0)]
+	if touch and TOUCH.has(action):
+		return "(%s)" % TOUCH[action]
+	if pad and PAD_HOLD.has(action):
+		return PAD_HOLD[action]
 	if not InputMap.has_action(action):
 		return ""
 	var fallback := ""

@@ -10,6 +10,7 @@ const CharacterScript := preload("res://proto3d/character.gd")
 const NEAR := 110.0
 const FAR := 170.0
 const MAX_PEOPLE := 16
+var max_people := MAX_PEOPLE      # fewer on phones (GameSettings light mode)
 const KID_SCALE := 0.72
 
 var main
@@ -45,7 +46,7 @@ func _process(delta: float) -> void:
 	_update_football(delta)
 	# build the pool slowly in quiet moments (one person every half second)
 	_pool_t -= delta
-	if _pool_t <= 0.0 and _pool.size() + _in_use() < MAX_PEOPLE:
+	if _pool_t <= 0.0 and _pool.size() + _in_use() < max_people:
 		_pool_t = 0.5
 		var c = CharacterScript.new()
 		c.set_outfit(CharacterScript.random_outfit(_rng, _rng.randf() < 0.5))
@@ -71,7 +72,7 @@ func _process(delta: float) -> void:
 		for k in scenes.keys():
 			if scenes[k]["kind"] in ["group", "football"]:
 				_clear(k)
-	if people_count() >= MAX_PEOPLE:
+	if people_count() >= max_people:
 		return
 	# sellers at stalls (any time but deep night)
 	if day > 0.15:
@@ -84,7 +85,7 @@ func _process(delta: float) -> void:
 				continue
 			var back := Basis(Vector3.UP, float(s[4])) * Vector3(0, 0, 0.7)      # behind the table, away from the road
 			_spawn_scene(key, "seller", at, [[at + back, float(s[4]) + PI, "ual/Idle_Talking", 1.0]])
-			if people_count() >= MAX_PEOPLE:
+			if people_count() >= max_people:
 				return
 	# chatting groups outside shops (daytime, dry)
 	if day > 0.5 and rain < 0.3:
@@ -111,7 +112,7 @@ func _process(delta: float) -> void:
 				members.append([at, atan2(at.x - c.x, at.z - c.z), "ual/Idle_Talking", 1.0])
 			_spawn_scene(key, "group", c, members)
 			made += 1
-			if people_count() >= MAX_PEOPLE:
+			if people_count() >= max_people:
 				return
 	# a football game on open ground (daytime, dry, one at a time)
 	if day > 0.6 and rain < 0.1 and not scenes.keys().any(func(k): return scenes[k]["kind"] == "football"):

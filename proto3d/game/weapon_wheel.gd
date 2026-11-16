@@ -145,6 +145,10 @@ func _draw_widget() -> void:
 	var d: Dictionary = weapons.defs[w]
 	var vs := get_viewport_rect().size
 	var box := Rect2(vs.x - 250, vs.y - 128, 230, 92)
+	if InputMode.is_touch():
+		# the bottom right belongs to the touch buttons: sit under the status panel instead
+		var m: Vector4 = main.safe_margins if main.get("safe_margins") != null else Vector4.ZERO
+		box.position = Vector2(12.0 + m.x, 190.0 + m.y)
 	_widget.draw_rect(box, NAVY)
 	var tex: Texture2D = _icons.get(String(d["id"]))
 	if tex != null:
@@ -162,5 +166,5 @@ func _draw_widget() -> void:
 			_widget.draw_rect(Rect2(box.position + Vector2(10, 76), Vector2(210 * f, 6)), GOLD)
 			_widget.draw_string(font, box.position + Vector2(10, 72), "RELOADING", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, GOLD)
 		elif state.clip[w] == 0 and state.reserve[w] > 0:
-			_widget.draw_string(font, box.position + Vector2(10, 84), "[R] RELOAD", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, GOLD)
-	_widget.draw_string(font, box.position + Vector2(130, 84), "[Tab] wheel", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 1, 1, 0.45))
+			_widget.draw_string(font, box.position + Vector2(10, 84), (InputGlyphs.of("p3_reload") + " RELOAD"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, GOLD)
+	_widget.draw_string(font, box.position + Vector2(130, 84), (InputGlyphs.of("p3_weapon") + " next" if InputMode.is_touch() else InputGlyphs.of("p3_wheel") + " wheel"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 1, 1, 0.45))

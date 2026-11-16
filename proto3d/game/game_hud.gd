@@ -46,6 +46,19 @@ var _menu_buttons: VBoxContainer
 var _menu_cb: Callable
 var _minimap: Texture2D
 var _mm := {}                     # minimap.json: x0, z0, m_per_px, w, h
+var _root: Control
+var _hint: Label
+var _map_title: Label
+var _mode_serial := -1            # InputMode.serial the hints were last written for
+
+## Key names written into prompts by the game systems, swapped for the button of the
+## control scheme in use (and for rebound keys).
+const PROMPT_KEYS := {"[E]": "p3_use", "[F]": "p3_interact", "[T]": "p3_hire", "[R]": "p3_reload"}
+const HINTS := [
+	"WASD move  Shift run  Space jump/handbrake  Mouse aim  LMB shoot  F car  E use  H horn  R radio  T hire  V camera  Q weapon  M map  Esc pause",
+	"",          # touch: the buttons are labelled
+	"Left stick move  L3 run  A jump/handbrake  RB shoot  LT aim  Y car  X use  B horn/roll  hold LB weapons  R3 camera  View map  Menu pause",
+]
 
 
 func setup(game_state: GameState, main_node) -> void:
@@ -96,6 +109,8 @@ func _build() -> void:
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.name = "Root"
+	_root = root
 	add_child(root)
 	# status panel
 	var panel := PanelContainer.new()
@@ -164,9 +179,11 @@ func _build() -> void:
 	_cross.draw.connect(_draw_cross)
 	root.add_child(_cross)
 	var hint := _label(12, Color(1, 1, 1, 0.75))
-	hint.text = "WASD move  Shift run  Space jump/handbrake  Mouse aim  LMB shoot  F car  E use  H horn  R radio  T hire  V camera  Q weapon  M map  Esc pause"
+	hint.text = HINTS[0]
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	hint.position = Vector2(12, -44)
+	hint.name = "Hint"
+	_hint = hint
 	root.add_child(hint)
 	if credits != "":
 		var c := _label(12, Color(1, 1, 1, 0.8))
@@ -218,6 +235,7 @@ func _build_map(root: Control) -> void:
 	title.text = "MONROVIA  ·  press M to close"
 	title.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	title.position = Vector2(-150, 14)
+	_map_title = title
 	_map.add_child(title)
 
 
@@ -239,6 +257,41 @@ func _build_menu(root: Control) -> void:
 	v.add_child(_menu_title)
 	v.add_child(_menu_text)
 	v.add_child(_menu_buttons)
+
+
+# ------------------------------------------------------------------ devices
+## "[E] Eat at ..." -> "(X) Eat at ..." on a gamepad, "(Use) Eat at ..." on touch.
+static func keys_to_glyphs(text: String) -> String:
+	if text == "" or not text.contains("["):
+		return text
+	var out := text
+	for k in PROMPT_KEYS:
+		if out.contains(k):
+			var g := InputGlyphs.of(PROMPT_KEYS[k])
+			if g != "":
+				out = out.replace(k, g)
+	return out
+
+
+## Bottom-left control hints and the map's close hint for the scheme in use.
+func _update_hints() -> void:
+	var m := InputMode.active
+	if _hint != null:
+		_hint.text = HINTS[m]
+		_hint.visible = HINTS[m] != ""
+	if _map_title != null:
+		_map_title.text = "MONROVIA  ·  %s to close" % ("tap Close" if m == InputMode.TOUCH else "press " + InputGlyphs.of("p3_map"))
+
+
+## Keeps the HUD inside the screen's safe area (notches, rounded corners, home bar):
+## Vector4(left, top, right, bottom) in canvas units.
+func apply_safe_area(m: Vector4) -> void:
+	if _root == null:
+		return
+	_root.offset_left = m.x
+	_root.offset_top = m.y
+	_root.offset_right = -m.z
+	_root.offset_bottom = -m.w
 
 
 # ------------------------------------------------------------------ menus
@@ -265,6 +318,8 @@ func open_menu(title: String, text: String, options: Array, callback: Callable) 
 		_menu_buttons.add_child(b)
 	_menu.visible = true
 	menu_open = true
+	if main != null and main.get("tutorial") != null:
+		main.tutorial._update_ui()               # its panel steps aside (it doesn't update while paused)
 	if main != null and main.audio != null:
 		main.audio.ui("ui_click")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -273,11 +328,16 @@ func open_menu(title: String, text: String, options: Array, callback: Callable) 
 	await get_tree().process_frame               # re-centre once the container has sized itself
 	if is_instance_valid(_menu):
 		_menu.position = (get_viewport().get_visible_rect().size - _menu.size) / 2.0
-		# keyboard arrows / gamepad d-pad: start on the first button that can be pressed
+		# keyboard arrows / gamepad d-pad: start on the first button that can be pressed,
+		# and wrap from the last back to the first
+		var live: Array[Button] = []
 		for b in _menu_buttons.get_children():
 			if b is Button and not (b as Button).disabled and not b.is_queued_for_deletion():
-				(b as Button).grab_focus()
-				break
+				live.append(b as Button)
+		if not live.is_empty():
+			live[0].focus_neighbor_top = live[0].get_path_to(live[-1])
+			live[-1].focus_neighbor_bottom = live[-1].get_path_to(live[0])
+			live[0].grab_focus()
 
 
 func choose(i: int) -> void:
@@ -298,7 +358,7 @@ func close_menu() -> void:
 	_menu.visible = false
 	menu_open = false
 	menu_closed.emit()
-	if not map_open and DisplayServer.get_name() != "headless":
+	if not map_open and DisplayServer.get_name() != "headless" and not InputMode.is_touch():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -372,15 +432,18 @@ func _process(delta: float) -> void:
 	var obj: String = "" if (main.get("tutorial") != null and main.tutorial.active) else main.objective_text()
 	_objective.visible = obj != "" and not map_open
 	_objective.text = obj
-	var pr: String = main.prompt_text()
+	var pr: String = keys_to_glyphs(main.prompt_text())
 	_prompt.visible = pr != "" and not menu_open and not map_open
 	_prompt.text = pr
+	if _mode_serial != InputMode.serial:
+		_mode_serial = InputMode.serial
+		_update_hints()
 	var car = main.car
 	_vehicle.visible = car != null
 	if car != null:
 		var vt := "%s   %d km/h   Condition %d%%" % [main.vehicle_name(car.kind).capitalize(), car.kmh(), car.condition()]
 		if car.kind in ["taxi", "keke"]:
-			vt += "   Hire: %s (T)" % ("ON" if main.taxi.hire else "OFF")
+			vt += "   Hire: %s %s" % ["ON" if main.taxi.hire else "OFF", InputGlyphs.of("p3_hire")]
 		_vehicle.text = vt
 	if _big_t > 0.0:
 		_big_t -= delta

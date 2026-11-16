@@ -115,6 +115,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		_idle_look = 0.0
 
 
+## Touch: a finger dragging on the right of the screen (radians, from TouchControls).
+func touch_look(rad: Vector2) -> void:
+	yaw -= rad.x * sensitivity
+	pitch -= rad.y * sensitivity * (-1.0 if invert_y else 1.0)
+	_idle_look = 0.0
+
+
 func _process(delta: float) -> void:
 	if target == null:
 		return

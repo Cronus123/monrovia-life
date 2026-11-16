@@ -31,7 +31,9 @@ const ACTIONS := {
 	"p3_reload": ["Reload (on foot)", ["key:R"], ["joy:12"]],
 	"p3_dodge": ["Dodge roll", ["key:C"], ["joy:1"]],
 	"p3_crouch": ["Crouch", ["key:Ctrl"], ["joy:13"]],
-	"p3_ability": ["Perk ability (repair / call Big Talk)", ["key:B"], []],
+	# gamepad: View is shared with the map: a tap opens the map, holding it uses the perk
+	# (main_city.gd tells the two apart)
+	"p3_ability": ["Perk ability (repair / call Big Talk)", ["key:B"], ["joy:4"]],
 	"p3_fists": ["Fists", ["key:1"], []],
 	"p3_pistol": ["Pistol", ["key:2"], []],
 	"p3_slot_3": ["Baseball bat", ["key:3"], []],
@@ -77,12 +79,32 @@ static func events_for(action: String) -> Array:
 	return out
 
 
+## Menu navigation on a gamepad (title, pause, shops, settings): the d-pad is in Godot's
+## defaults; the left stick is added here, plus A / B for accept / back.
+const UI_PAD := {
+	"ui_up": ["axis:1:-1", "joy:11"], "ui_down": ["axis:1:1", "joy:12"],
+	"ui_left": ["axis:0:-1", "joy:13"], "ui_right": ["axis:0:1", "joy:14"],
+	"ui_accept": ["joy:0"], "ui_cancel": ["joy:1"],
+}
+
+
 ## Adds any missing action with its default events (a safety net if project.godot lacks them).
 static func ensure() -> void:
 	for a in ACTIONS:
 		if not InputMap.has_action(a):
 			InputMap.add_action(a, 0.25)
 			for e in events_for(a):
+				InputMap.action_add_event(a, e)
+	ensure_ui_pad()
+
+
+static func ensure_ui_pad() -> void:
+	for a in UI_PAD:
+		if not InputMap.has_action(a):
+			continue
+		for spec in UI_PAD[a]:
+			var e := make_event(spec)
+			if not InputMap.action_has_event(a, e):
 				InputMap.action_add_event(a, e)
 
 

@@ -18,6 +18,7 @@ var _overlay_text: RichTextLabel
 var _overlay_back: Button
 var _t := 0.0
 var _starting := false
+var _compact := false                     # phones / tablets: smaller title and buttons
 
 
 func _ready() -> void:
@@ -109,6 +110,7 @@ func _on_controls() -> void:
 				if s == "":
 					continue
 				if e is InputEventJoypadButton or e is InputEventJoypadMotion:
+					s = String(InputGlyphs.PAD_HOLD.get(a, s))
 					if not s in pad:
 						pad.append(s)
 				elif not s in kb:
@@ -116,7 +118,10 @@ func _on_controls() -> void:
 		lines.append("[cell]%s   [/cell][cell]%s   [/cell][cell]%s[/cell]" % [String(InputDefaults.ACTIONS[a][0]), " ".join(kb), " ".join(pad)])
 	lines.append("[/table]")
 	lines.append("")
-	lines.append("Keys can be changed in Settings > Controls.   F8 reports a bug.")
+	lines.append("Keys can be changed in Settings > Controls.   F8 reports a bug (or Report a bug in the pause menu).")
+	lines.append("")
+	lines.append("[b]Touch[/b] (phones and tablets): the joystick under your left thumb moves you (push it to the rim to run), drag on the right side to look around, and the buttons by your right thumb shoot, jump, get in cars and more. II pauses.")
+	lines.append("[b]Gamepad[/b]: Xbox and PlayStation pads both work, in the browser too; menus use the d-pad or left stick, A / Cross to choose, B / Circle to go back.")
 	_show_overlay("\n".join(lines))
 
 
@@ -187,35 +192,43 @@ func _build_ui() -> void:
 	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(band)
 
+	# phones and tablets: the UI is drawn bigger (DeviceProfile.UI_SCALE), so the menu is
+	# made more compact to fit, and kept inside the screen's safe area
+	var compact := DeviceProfile.is_handheld()
+	var phone := DeviceProfile.is_phone()
+	var safe: Vector4 = city.safe_margins if city != null else Vector4.ZERO
 	var col := VBoxContainer.new()
+	col.name = "Column"
 	col.anchor_top = 0.0
 	col.anchor_bottom = 1.0
-	col.offset_left = 80
-	col.offset_top = 60
-	col.offset_bottom = -70
-	col.offset_right = 600
-	col.add_theme_constant_override("separation", 6)
+	col.offset_left = (24 if compact else 80) + safe.x
+	col.offset_top = (14 if phone else (30 if compact else 60)) + safe.y
+	col.offset_bottom = -(40 if compact else 70) - safe.w
+	col.offset_right = col.offset_left + 520
+	col.add_theme_constant_override("separation", 3 if phone else 6)
 	root.add_child(col)
 	var logo := Label.new()
 	logo.text = "MONROVIA LIFE"
-	logo.add_theme_font_size_override("font_size", 72)
+	logo.add_theme_font_size_override("font_size", 40 if phone else (58 if compact else 72))
 	logo.add_theme_color_override("font_color", YELLOW)
 	logo.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
 	logo.add_theme_constant_override("outline_size", 10)
 	col.add_child(logo)
 	var sub := Label.new()
 	sub.text = "S T R E E T S"
-	sub.add_theme_font_size_override("font_size", 26)
+	sub.add_theme_font_size_override("font_size", 18 if phone else 26)
 	sub.add_theme_color_override("font_color", Color.WHITE)
 	col.add_child(sub)
 	var tag := Label.new()
 	tag.text = "Run jobs for Auntie Musu, drive keke and taxi, and stay ahead\nof the police from Mamba Point to Sinkor."
 	tag.add_theme_font_size_override("font_size", 16)
 	tag.add_theme_color_override("font_color", Color(0.85, 0.88, 0.93))
+	tag.visible = not phone
 	col.add_child(tag)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 22)
+	gap.custom_minimum_size = Vector2(0, 6 if phone else (12 if compact else 22))
 	col.add_child(gap)
+	_compact = compact
 
 	_loading = Label.new()
 	_loading.text = "Loading Monrovia..."
@@ -278,8 +291,12 @@ func _build_ui() -> void:
 	_overlay.anchor_right = 0.5
 	_overlay.anchor_top = 0.08
 	_overlay.anchor_bottom = 0.92
-	_overlay.offset_left = -430
-	_overlay.offset_right = 430
+	var half := minf(430.0, root.get_viewport_rect().size.x / 2.0 - 12.0)
+	_overlay.offset_left = -half
+	_overlay.offset_right = half
+	if compact:
+		_overlay.anchor_top = 0.03
+		_overlay.anchor_bottom = 0.97
 	_overlay.visible = false
 	root.add_child(_overlay)
 	var ov := VBoxContainer.new()
@@ -307,8 +324,8 @@ func _styled_button(label: String) -> Button:
 	var b := Button.new()
 	b.text = label
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.custom_minimum_size = Vector2(320, 42)
-	b.add_theme_font_size_override("font_size", 22)
+	b.custom_minimum_size = Vector2(300, 34) if _compact else Vector2(320, 42)
+	b.add_theme_font_size_override("font_size", 18 if _compact else 22)
 	var normal := StyleBoxFlat.new()
 	normal.bg_color = Color(0, 0, 0, 0.35)
 	normal.set_content_margin_all(10)

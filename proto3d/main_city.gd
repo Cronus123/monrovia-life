@@ -36,6 +36,7 @@ const LINES := ["How da body?", "Ma people! How you doing?", "Ah, the sun hot to
 const ENTER_RANGE := 3.4
 const PEDESTRIANS := 16
 const PARKED := 6
+const BACK_HOLD_MS := 450         # gamepad View: tap = map, hold = perk ability
 const PEOPLE_RADIUS := 160.0
 const PARKED_RADIUS := 200.0
 
@@ -85,12 +86,23 @@ var _people_t := 0.0
 var _sun: DirectionalLight3D
 var _env: Environment
 var _busy := false                # respawning
+# devices (phone / tablet / desktop, touch / gamepad / keyboard)
+var ped_cap := PEDESTRIANS        # fewer people and parked cars in light mode (GameSettings)
+var parked_cap := PARKED
+var touch_layer: CanvasLayer
+var touch: TouchControls
+var safe_margins := Vector4.ZERO  # safe area in canvas units (left, top, right, bottom)
+var _rotate_hint: Label
+var _back_down_ms := -1           # gamepad View held since (ms), -1 when up
+var _back_used := false
+var _mode_serial := -1            # InputMode.serial last acted on
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_rng.seed = 2026
 	auto_start = (auto_start or DisplayServer.get_name() == "headless") and not title_mode
+	DeviceProfile.detect()                  # phone / tablet / desktop, touch screen
 	settings.load_file()
 	settings.apply_system()                 # audio buses and volumes, display, key bindings
 	_build_environment()
@@ -130,6 +142,7 @@ func _ready() -> void:
 	settings_menu.visible = false
 	settings_menu.process_mode = Node.PROCESS_MODE_ALWAYS
 	hud.add_child(settings_menu)
+	_setup_devices()
 	audio.process_mode = Node.PROCESS_MODE_ALWAYS
 	audio.setup(self)
 	effects.audio = audio
@@ -191,6 +204,77 @@ func _ready() -> void:
 			load_marks["warm_s"] = Time.get_ticks_msec() / 1000.0
 	else:
 		_start_menu()
+
+
+# ------------------------------------------------------------------ devices
+## Touch overlay, UI scale and safe area for the device (DeviceProfile), and the control
+## scheme to start with (InputMode). Runs before the city has loaded.
+func _setup_devices() -> void:
+	touch_layer = CanvasLayer.new()
+	touch_layer.layer = 5                      # over the HUD, under menus' own layers
+	touch_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	touch_layer.name = "TouchLayer"
+	add_child(touch_layer)
+	touch = TouchControls.new()
+	touch.name = "TouchControls"
+	touch.visible = false
+	touch_layer.add_child(touch)
+	touch.setup(self)
+	_rotate_hint = Label.new()
+	_rotate_hint.text = "Turn your phone sideways to play"
+	_rotate_hint.add_theme_font_size_override("font_size", 22)
+	_rotate_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_rotate_hint.add_theme_constant_override("outline_size", 6)
+	_rotate_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_rotate_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_rotate_hint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_rotate_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_rotate_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rotate_hint.visible = false
+	touch_layer.add_child(_rotate_hint)
+	if not get_viewport().size_changed.is_connected(apply_device_layout):
+		get_viewport().size_changed.connect(apply_device_layout)
+	apply_device_layout()
+
+
+## UI scale (phones and tablets draw the UI bigger), safe-area margins for the HUD and
+## the touch controls, the tablet's two-corner touch layout. Re-run on every resize
+## (rotating the device, resizing the browser window).
+func apply_device_layout() -> void:
+	if not is_inside_tree():
+		return
+	var win := get_tree().root
+	if DisplayServer.get_name() != "headless" and not is_equal_approx(win.content_scale_factor, DeviceProfile.ui_scale()):
+		win.content_scale_factor = DeviceProfile.ui_scale()
+		call_deferred("apply_device_layout")     # the canvas size changes with the scale
+	safe_margins = DeviceProfile.safe_margins(get_viewport())
+	hud.apply_safe_area(safe_margins)
+	if touch != null:
+		touch.layout_kind = DeviceProfile.kind
+		touch.margins = safe_margins
+		touch.relayout()
+	if _rotate_hint != null:
+		_rotate_hint.visible = DeviceProfile.is_phone() and DeviceProfile.portrait(get_viewport())
+
+
+func _input(event: InputEvent) -> void:
+	InputMode.note(event)                     # follow the last device used (Auto scheme)
+	if InputMode.serial != _mode_serial:
+		_mode_serial = InputMode.serial
+		_on_input_mode_changed()
+
+
+func _on_input_mode_changed() -> void:
+	if touch != null and not InputMode.is_touch():
+		touch.release_all()
+	if InputMode.is_touch() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	# gamepad in a menu: make sure something has focus to move from
+	if InputMode.is_pad() and (hud.menu_open or settings_menu.visible) and get_viewport().gui_get_focus_owner() == null:
+		for b in (settings_menu if settings_menu.visible else hud).find_children("*", "Button", true, false):
+			if (b as Button).is_visible_in_tree() and not (b as Button).disabled:
+				(b as Button).grab_focus()
+				break
 
 
 # ------------------------------------------------------------------ title screen
@@ -672,7 +756,7 @@ func ped_target() -> int:
 	elif (h >= 7.0 and h < 9.5) or (h >= 16.5 and h < 19.0):
 		f = 1.15
 	f *= 1.0 - clock.rain_amount() * 0.35
-	return clampi(int(round(PEDESTRIANS * f)), 4, PEDESTRIANS + 3)
+	return clampi(int(round(ped_cap * f)), mini(4, ped_cap), ped_cap + 3)
 
 
 func _manage_population() -> void:
@@ -683,6 +767,14 @@ func _manage_population() -> void:
 			peds.erase(ped)
 			if is_instance_valid(ped):
 				ped.queue_free()
+	# fewer allowed (light mode switched on, night falling): let the farthest go first
+	while peds.size() > ped_target() + 3:
+		var far = peds[0]
+		for ped in peds:
+			if ped.global_position.distance_to(p) > far.global_position.distance_to(p):
+				far = ped
+		peds.erase(far)
+		far.queue_free()
 	var tries := 0
 	while peds.size() < ped_target() and not paths.is_empty() and tries < 6:
 		tries += 1
@@ -711,7 +803,7 @@ func _manage_population() -> void:
 			parked += 1
 	var spots: Array = streamer.nearby(p, PARKED_RADIUS, "parking")
 	tries = 0
-	while parked < PARKED and not spots.is_empty() and tries < 4:
+	while parked < parked_cap and not spots.is_empty() and tries < 4:
 		tries += 1
 		var s: Array = spots[_rng.randi() % spots.size()]
 		var at := Vector3(s[0], s[1] + 0.3, s[2])
@@ -800,7 +892,10 @@ func _process(delta: float) -> void:
 	if _people_t <= 0.0:
 		_people_t = 0.5
 		_manage_population()
-	if not title_mode and Input.is_action_pressed("p3_fire") and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.get_connected_joypads().size() > 0):
+	if _back_down_ms >= 0 and not _back_used and Time.get_ticks_msec() - _back_down_ms >= BACK_HOLD_MS:
+		_back_used = true                       # gamepad View held: perk ability
+		perks.use_ability()
+	if not title_mode and Input.is_action_pressed("p3_fire") and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.get_connected_joypads().size() > 0 or InputMode.is_touch()):
 		if car == null:
 			weapons.try_fire()
 		else:
@@ -822,6 +917,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	if settings_menu.visible:
 		if event is InputEventKey and (event as InputEventKey).pressed and (event as InputEventKey).physical_keycode == KEY_ESCAPE:
 			settings_menu.close()
+		elif event is InputEventJoypadButton and event.is_action_pressed("ui_cancel"):     # gamepad B
+			settings_menu.close()
+		return
+	# gamepad View: a tap opens / closes the map, holding it uses the perk ability
+	if event is InputEventJoypadButton and (event as InputEventJoypadButton).button_index == JOY_BUTTON_BACK and not hud.menu_open:
+		var jb := event as InputEventJoypadButton
+		if jb.pressed and not jb.is_echo():
+			if hud.map_open:
+				hud.toggle_map()
+				get_tree().paused = false
+			else:
+				_back_down_ms = Time.get_ticks_msec()
+				_back_used = false
+		elif not jb.pressed and _back_down_ms >= 0:
+			if not _back_used:
+				hud.toggle_map()
+				get_tree().paused = hud.map_open
+			_back_down_ms = -1
 		return
 	if hud.menu_open:
 		if event is InputEventJoypadButton and event.is_action_pressed("ui_cancel"):     # gamepad B
@@ -886,7 +999,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_pick(GameState.SMG)
 	elif event.is_action_pressed("p3_slot_6"):
 		_pick(GameState.SHOTGUN)
-	elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+	elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed and not InputMode.is_touch():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -909,6 +1022,7 @@ func _talk() -> void:
 func open_settings(back: Callable) -> void:
 	get_tree().paused = true
 	hud.menu_open = true
+	tutorial._update_ui()                      # hides its panel (it doesn't update while paused)
 	settings_menu.open(settings, self)
 	if not settings_menu.closed.is_connected(_on_settings_closed):
 		settings_menu.closed.connect(_on_settings_closed)
@@ -928,12 +1042,16 @@ func _pause_menu() -> void:
 		{"label": "Quit to title (saves)"}]
 	if not OS.has_feature("web"):
 		opts.append({"label": "Quit to desktop (saves)"})      # a browser tab is just closed
+	opts.append({"label": "Report a bug"})       # F8 on a keyboard; this is for touch and gamepads
 	hud.open_menu("Paused", "Day %d, %s. Missions done: %d of %d." % [state.day(), state.clock_text(), state.mission_idx, missions.list.size()],
 		opts, _on_pause_choice)
 
 
 func _on_pause_choice(i: int) -> void:
 	get_tree().paused = false
+	if i == (5 if OS.has_feature("web") else 6):
+		bug_report.open()
+		return
 	match i:
 		1:
 			open_settings(_pause_menu)

@@ -114,14 +114,37 @@ Every control can be changed in **Settings → Controls** (saved to `user://sett
 | Taxi hire light | T | D-pad up |
 | Camera view (third / first person) | V | R3 |
 | Switch weapon | Q, 1, 2 | LB |
-| Map | M | Back |
+| Map | M | View (Back) |
 | Pause (resume, settings, save, quit to title) | Esc | Start |
-| Report a bug | F8 | |
+| Perk ability | B | hold View |
+| Report a bug | F8 | pause menu > Report a bug |
 
 **Settings** (from the start and pause menus): volumes for master, music, sound effects and
 ambience; resolution, fullscreen, V-sync; graphics quality (Low, Medium, High); mouse/stick
 sensitivity, invert Y, field of view; key bindings.
 
+## Phones, tablets and gamepads
+The game works out what it's running on at start-up (in the browser it reads the navigator through
+`JavaScriptBridge`; `?device=phone`, `tablet` or `desktop` in the address pretends to be one):
+
+- **Touch controls** (phones and tablets): a joystick under the left thumb (push it to the rim to
+  run; in a car it steers and accelerates), drag on the right of the screen to look, and buttons in
+  the right thumb's reach: Shoot, Jump/Brake, Aim, Car, Use, Weapon, Reload, Crouch, Roll (in a car:
+  Horn, Radio, Hire). Small buttons along the top pause, open the map, switch the camera and use
+  the perk. They show only while touch is being used.
+- **Tablets** get bigger buttons that use both bottom corners (reload, crouch and roll by the left
+  thumb), and phones and tablets draw the HUD and menus bigger. Everything stays inside the
+  screen's safe area (notches, rounded corners, the home bar). Phones ask to be turned sideways.
+- **Gamepads** (Xbox and PlayStation, in the browser too): every action, plus the title, pause,
+  shop and settings menus (d-pad or left stick, A / Cross to choose, B / Circle back, LB / RB to
+  change settings tab). Tap View for the map, hold it for the perk ability; the LB wheel picks
+  weapons.
+- **Switching**: the controls follow whatever you used last, keyboard and mouse, touch or a
+  gamepad, and the on-screen prompts change with them ("[F]", "(Y)", "(Car)"). Settings > Controls >
+  Control scheme fixes one (Auto / Keyboard / Touch / Gamepad).
+- **Light mode** (on by itself on phones): 67% 3D resolution, no shadows, a shorter streaming
+  radius, less traffic and fewer people. Settings > Display can turn it on or off for any device and
+  set the 3D resolution by hand.
 ## Rebuilding the data
 The tools run with **Blender 5.3** and its bundled Python (no other installs needed).
 
@@ -139,11 +162,11 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs fourteen checks: Godot import, start-up,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs fifteen checks: Godot import, start-up,
 the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
 shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
-damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, skills/perks/street life, the leg animation, driving (every vehicle laps a test ground), the playtest build (title screen, tutorial, pause menu, bug report) and the browser build (tiles streamed over HTTP, export preset, browser shaders). It fails on any error or warning.
+damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, skills/perks/street life, the leg animation, driving (every vehicle laps a test ground), the playtest build (title screen, tutorial, pause menu, bug report) the browser build (tiles streamed over HTTP, export preset, browser shaders) and devices (phone/tablet detection, touch controls, gamepad menus, control switching, light mode). It fails on any error or warning.
 `tests/world_audit.gd` sweeps the city for physics/road/prop/people problems; `tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout

@@ -24,6 +24,9 @@
                                 tutorial step, pause menu, F8 bug report; writes only to tests/output)
    14. Browser build          (tests/smoke_web.gd: city tiles streamed over HTTP like the browser
                                 build, the Web City export preset, browser shaders, save import)
+   15. Devices                (tests/smoke_devices.gd: phone/tablet/desktop detection, switching
+                                between keyboard, touch and gamepad, touch controls, gamepad
+                                menus, tablet layout and safe areas, light graphics on phones)
   and fails (exit code 1) if any step prints a script error, engine error or warning,
   or if the smoke test does not print "SMOKE TEST PASSED".
 
@@ -56,7 +59,7 @@ $outDir = Join-Path $project "tests\output"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 # Lines that count as failures. Godot prints these to stdout/stderr.
-$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED|SMOKEWPN CHECK FAILED|SMOKEWPN TEST FAILED|SMOKEPERKS CHECK FAILED|SMOKEPERKS TEST FAILED|SMOKELEGS CHECK FAILED|SMOKELEGS TEST FAILED|SMOKEDRIVE CHECK FAILED|SMOKEDRIVE TEST FAILED|SMOKEPLAY CHECK FAILED|SMOKEPLAY TEST FAILED|SMOKEWEB CHECK FAILED|SMOKEWEB TEST FAILED)'
+$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED|SMOKEWPN CHECK FAILED|SMOKEWPN TEST FAILED|SMOKEPERKS CHECK FAILED|SMOKEPERKS TEST FAILED|SMOKELEGS CHECK FAILED|SMOKELEGS TEST FAILED|SMOKEDRIVE CHECK FAILED|SMOKEDRIVE TEST FAILED|SMOKEPLAY CHECK FAILED|SMOKEPLAY TEST FAILED|SMOKEWEB CHECK FAILED|SMOKEWEB TEST FAILED|SMOKEDEV CHECK FAILED|SMOKEDEV TEST FAILED)'
 
 # Engine messages that are not our bugs and recover by themselves. Jolt prints this one now
 # and then when physics steps run back to back (seen with the old car code too); it waits
@@ -103,7 +106,8 @@ $results = @(
     (Invoke-Step "11_smoke_legs" @("--headless", "--path", $project, "--script", "res://tests/smoke_legs.gd") "SMOKELEGS TEST PASSED"),
     (Invoke-Step "12_smoke_drive" @("--headless", "--fixed-fps", "60", "--path", $project, "--script", "res://tests/smoke_drive.gd") "SMOKEDRIVE TEST PASSED"),
     (Invoke-Step "13_smoke_playtest" @("--headless", "--path", $project, "--script", "res://tests/smoke_playtest.gd") "SMOKEPLAY TEST PASSED"),
-    (Invoke-Step "14_smoke_web" @("--headless", "--path", $project, "--script", "res://tests/smoke_web.gd") "SMOKEWEB TEST PASSED")
+    (Invoke-Step "14_smoke_web" @("--headless", "--path", $project, "--script", "res://tests/smoke_web.gd") "SMOKEWEB TEST PASSED"),
+    (Invoke-Step "15_smoke_devices" @("--headless", "--path", $project, "--script", "res://tests/smoke_devices.gd") "SMOKEDEV TEST PASSED")
 )
 
 if ($results -contains $false) {
