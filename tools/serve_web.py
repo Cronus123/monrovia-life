@@ -3,10 +3,12 @@
 Uses only the Python standard library (Blender's bundled Python works):
     "<Blender>\\5.3\\python\\bin\\python.exe" -I tools\\serve_web.py [port]
 
-Like a real static host it sends .wasm as application/wasm and lets the browser cache the
+Like GitHub Pages it gzips responses (.glb, .wasm, .pck, .js, .html), sends .wasm as
+application/wasm and lets the browser cache the
 city tiles. Logs one line per tile so you can watch the streaming.
 """
 import functools
+import gzip
 import http.server
 import os
 import sys
@@ -27,6 +29,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_header("Cache-Control", "no-cache")
         super().end_headers()
+
+    def do_GET(self):
+        # Compress like GitHub Pages does (Content-Encoding: gzip), so a local test behaves
+        # like the live site - the browser unpacks it before the game sees it.
+        path = self.translate_path(self.path.split("?")[0])
+        gz_types = (".glb", ".wasm", ".pck", ".js", ".html")
+        if (os.path.isfile(path) and path.endswith(gz_types)
+                and "gzip" in self.headers.get("Accept-Encoding", "")):
+            with open(path, "rb") as f:
+                body = gzip.compress(f.read(), compresslevel=6)
+            self.send_response(200)
+            self.send_header("Content-Type", self.guess_type(path))
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
 
     def do_POST(self):
         # the browser benchmark posts screenshots here: /shot/<name> -> build/screens/web/<name>.png

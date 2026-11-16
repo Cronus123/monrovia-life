@@ -44,6 +44,8 @@ func _process(_delta: float) -> bool:
 
 
 ## Minimal static file server: GET /city/<lod>/<tile>.glb -> res://proto3d/city/...
+## Responses say "Content-Encoding: gzip" with the plain file as the body - exactly what
+## the game sees in a browser on GitHub Pages (regression: tiles failed to unpack there).
 func _serve() -> void:
 	while server.is_connection_available():
 		clients.append({"peer": server.take_connection(), "buf": ""})
@@ -63,7 +65,8 @@ func _serve() -> void:
 		var file := "res://proto3d" + path
 		var body := FileAccess.get_file_as_bytes(file) if path.begins_with("/city/") and FileAccess.file_exists(file) else PackedByteArray()
 		var status := "200 OK" if not body.is_empty() else "404 Not Found"
-		peer.put_data(("HTTP/1.1 %s\r\nContent-Type: model/gltf-binary\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % [status, body.size()]).to_utf8_buffer())
+		# like GitHub Pages as seen through a browser: marked gzip, body already unpacked
+		peer.put_data(("HTTP/1.1 %s\r\nContent-Type: model/gltf-binary\r\nContent-Encoding: gzip\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % [status, body.size()]).to_utf8_buffer())
 		if not body.is_empty():
 			peer.put_data(body)
 		peer.disconnect_from_host()
@@ -90,7 +93,7 @@ func run() -> void:
 	check(st.hi_radius <= 300.0 and st.lo_radius <= 800.0, "web mode starts with the tighter rings (%.0f / %.0f m)" % [st.hi_radius, st.lo_radius])
 	var spawn: Vector3 = st.spawn_point()
 	st.focus = spawn
-	check(await until(func(): return st.is_area_ready(spawn, 140.0), 90.0), "the start area streams in over HTTP")
+	check(await until(func(): return st.is_area_ready(spawn, 140.0), 90.0), "the start area streams in over HTTP (gzip-marked, as on GitHub Pages)")
 	var hi := 0
 	for p in served:
 		if String(p).begins_with("/city/hi/"):

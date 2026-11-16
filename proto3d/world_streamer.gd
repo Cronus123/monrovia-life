@@ -499,6 +499,10 @@ func _web_base() -> String:
 func _fetch(job: Dictionary) -> void:
 	var req := HTTPRequest.new()
 	req.use_threads = false
+	# Hosts like GitHub Pages send tiles gzip-compressed; the browser has already unpacked
+	# them by the time Godot sees the body, so Godot must not try to gunzip it again
+	# (that failed with RESULT_BODY_DECOMPRESS_FAILED and the city never loaded).
+	req.accept_gzip = false
 	req.timeout = 0.0              # no timeout: with slow first frames (shader compiles) a
 	                               # finished download can wait seconds to be noticed
 	add_child(req)
