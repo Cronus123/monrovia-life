@@ -34,7 +34,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # Compress like GitHub Pages does (Content-Encoding: gzip), so a local test behaves
         # like the live site - the browser unpacks it before the game sees it.
         path = self.translate_path(self.path.split("?")[0])
-        gz_types = (".glb", ".wasm", ".pck", ".js", ".html")
+        gz_types = (".glb", ".wasm", ".pck", ".js", ".html", ".json")
         if (os.path.isfile(path) and path.endswith(gz_types)
                 and "gzip" in self.headers.get("Accept-Encoding", "")):
             with open(path, "rb") as f:

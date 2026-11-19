@@ -47,9 +47,24 @@ func until(cond: Callable, max_s: float) -> bool:
 
 func run() -> void:
 	await process_frame
+	while title.city == null:              # the title loads the city after drawing its menu
+		await process_frame
 	city = title.city
 	city.save_path = OUT + "/save.json"
 	city.bug_report.dir_root = OUT + "/bug_reports"
+	print("fast start")
+	check(title._menu.visible and title.backdrop.visible and not city.ready_done,
+		"the menu shows before the city has loaded, over the skyline backdrop")
+	check(title._account_label.text.contains("guest") and title._account_button.text == "Sign in / Create account",
+		"guest play by default, with Sign in / Create account offered")
+	title._on_new_game()
+	check(title._pending == 0 and title._wait_box.visible and city.title_mode,
+		"New Game before the city is ready waits, with a progress bar (%s)" % title._wait_label.text)
+	var esc := InputEventAction.new()
+	esc.action = "ui_cancel"
+	esc.pressed = true
+	title._unhandled_input(esc)
+	check(title._pending == -1 and not title._wait_box.visible, "Esc / B cancels the wait")
 	print("title screen")
 	# the Windows City export uses the "city3d" feature tag, which overrides the main scene
 	var cfg := ConfigFile.new()
@@ -58,13 +73,14 @@ func run() -> void:
 		and String(cfg.get_value("application", "run/main_scene.city3d")) == "res://proto3d/title.tscn",
 		"the title screen is the main scene (and for the city3d export)")
 	check(await until(func(): return city.ready_done, 120.0), "the city loads behind the title")
+	check(await until(func(): return not title.backdrop.visible, 5.0), "and fades in over the skyline")
 	await seconds(0.5)
 	check(city.title_mode and city.flyover_cam != null and not city.hud.visible and not city.player.active,
 		"title mode: flyover camera, no HUD, no player")
 	var names: Array = []
 	for b in title._buttons:
 		names.append(String(b.text))
-	var expect := ["New Game", "Settings", "Controls", "Credits", "Quit"]
+	var expect := ["New Game", "Sign in / Create account", "Settings", "Controls", "Credits", "Quit"]
 	if SaveSystem.has_save():
 		expect.push_front("Continue")
 	check(names == expect, "menu buttons %s" % str(names))
@@ -128,7 +144,11 @@ func run() -> void:
 	check(city.state.owned[GameState.BAT] and city.state.weapon == GameState.BAT, "the bat is yours and in hand")
 	var d = tut.dummy
 	check(d != null and d in city.all_walkers(), "a training dummy stands there")
-	for i in 3:
+	# up to 6 swings for 3 hits: the first can land while the player is still settling after
+	# being placed (it missed on the devices commit too)
+	for i in 6:
+		if not is_instance_valid(d) or d.hits >= 3 or tut.step_id() != "dummy":
+			break                                # (the tutorial frees the dummy after hit 3)
 		var fw: Vector3 = (d.global_position - city.player.global_position) * Vector3(1, 0, 1)
 		fw = fw.normalized() if fw.length() > 0.01 else Vector3.FORWARD
 		city.player.global_position = d.global_position - fw * 0.95 + Vector3(0, 0.1, 0)

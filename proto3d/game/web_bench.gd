@@ -28,6 +28,8 @@ func run() -> void:
 		await get_tree().process_frame
 	city = title.city
 	results["ready_s"] = snappedf(Time.get_ticks_msec() / 1000.0, 0.1)
+	results["menu_s"] = snappedf(title.menu_shown_s, 0.1)        # menu on screen (before the city)
+	results["city_shown_s"] = snappedf(title.city_shown_s, 0.1)
 	results["tiles_mb"] = snappedf(city.streamer.web_bytes / 1048576.0, 0.1)
 	results["first_request_s"] = snappedf(city.streamer.first_request_s, 0.1)
 	results["first_tile_s"] = snappedf(city.streamer.first_tile_s, 0.1)

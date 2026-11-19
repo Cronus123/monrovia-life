@@ -1,10 +1,13 @@
 extends Node
-## Title screen and main menu (the project's main scene). Loads the city behind it in
-## title mode and flies a camera slowly around Monrovia while you choose:
-## Continue (if there's a save), New Game, Settings, Controls, Credits, Quit.
-## Keyboard, mouse and gamepad all work (arrows / d-pad / stick, Enter / A, Esc / B).
+## Title screen and main menu (the project's main scene). The menu shows as soon as the
+## engine has started, over an animated skyline (TitleBackdrop); the city loads behind it
+## in title mode and fades in once the tiles near the camera are ready, then a camera flies
+## slowly around Monrovia while you choose:
+## Continue (if there's a save), New Game, Sign in / Account, Settings, Controls, Credits, Quit.
+## New Game / Continue wait for the starting area if it's still loading (with a progress bar).
+## Keyboard, mouse, touch and gamepad all work (arrows / d-pad / stick, Enter / A, Esc / B).
 
-const CityScene := preload("res://proto3d/main_city.tscn")
+const CITY_SCENE := "res://proto3d/main_city.tscn"
 const YELLOW := Color("#f5c518")
 const NAVY := Color(0.063, 0.102, 0.196)
 
@@ -12,21 +15,37 @@ var city
 var ui: CanvasLayer
 var _menu: VBoxContainer
 var _buttons: Array[Button] = []
-var _loading: Label
 var _overlay: PanelContainer
 var _overlay_text: RichTextLabel
 var _overlay_back: Button
 var _t := 0.0
 var _starting := false
 var _compact := false                     # phones / tablets: smaller title and buttons
+# fast start
+var backdrop: TitleBackdrop               # covers the 3D view until the city is ready
+var _city_shown := false
+var _pending := -1                        # New Game (0) / Continue (1) pressed before the city was ready
+var _wait_box: VBoxContainer
+var _wait_label: Label
+var _wait_bar: ProgressBar
+var menu_shown_s := 0.0                   # engine time when the menu was first drawn (benchmark)
+var city_shown_s := 0.0
+# accounts
+var account: TitleAccount                 # sign in / create account panel, cloud save offer
+var _account_label: Label
+var _account_button: Button
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	city = CityScene.instantiate()
-	city.title_mode = true
-	add_child(city)
+	DeviceProfile.detect()
+	if DisplayServer.get_name() != "headless":
+		get_tree().root.content_scale_factor = DeviceProfile.ui_scale()
 	_build_ui()
+	_buttons[0].grab_focus.call_deferred()
+	_announce_menu()
+	_load_city()
+	account.start()                       # signed in last time: refresh in the background
 	if WebBench.wanted():
 		var b := WebBench.new()
 		b.title = self
@@ -37,16 +56,42 @@ static func version() -> String:
 	return String(ProjectSettings.get_setting("application/config/version", "dev"))
 
 
+## Browser: say when the menu is on screen (tools measure time-to-menu from this line).
+func _announce_menu() -> void:
+	if not OS.has_feature("web"):
+		menu_shown_s = Time.get_ticks_msec() / 1000.0
+		return
+	await RenderingServer.frame_post_draw
+	menu_shown_s = Time.get_ticks_msec() / 1000.0
+	print("MENU_SHOWN at %.1f s" % menu_shown_s)
+
+
+## The city is loaded after the menu has been drawn (two frames), so the menu shows first.
+func _load_city() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	var scene := load(CITY_SCENE) as PackedScene
+	city = scene.instantiate()
+	city.title_mode = true
+	add_child(city)
+	move_child(city, 0)                    # under the title UI
+
+
 func _process(delta: float) -> void:
-	if city == null or not is_instance_valid(city):
+	if _pending >= 0:
+		_update_wait()
+	if city == null or not is_instance_valid(city) or not city.ready_done:
 		return
-	if not city.ready_done:
-		_loading.text = "Loading Monrovia" + ".".repeat(1 + int(Time.get_ticks_msec() / 400) % 3)
+	if not _city_shown:
+		_show_city()
+	if _pending >= 0 and not _starting:
+		var cont := _pending == 1
+		_pending = -1
+		_wait_box.visible = false
+		_start(cont)
 		return
-	if _loading.visible:
-		_loading.visible = false
-		_menu.visible = true
-		_buttons[0].grab_focus()
 	if city.flyover_cam == null:
 		return
 	# a slow orbit over the start of the game (Waterside / downtown)
@@ -59,14 +104,42 @@ func _process(delta: float) -> void:
 	city.flyover_focus = center.lerp(Vector3(pos.x, center.y, pos.z), 0.4)
 
 
+## The tiles around the camera are in: fade the skyline out and the city in.
+func _show_city() -> void:
+	_city_shown = true
+	city_shown_s = Time.get_ticks_msec() / 1000.0
+	if OS.has_feature("web"):
+		print("CITY_SHOWN at %.1f s" % city_shown_s)
+	var tw := create_tween()
+	tw.tween_property(backdrop, "modulate:a", 0.0, 1.4)
+	tw.tween_callback(func(): backdrop.visible = false)
+
+
+func _update_wait() -> void:
+	var p := 0.0
+	if city != null and is_instance_valid(city) and city.streamer != null:
+		p = city.streamer.area_progress(city.player.spawn_point, 140.0)
+		if p >= 1.0 and not city.ready_done:
+			p = 0.97                           # tiles in, last touches
+	_wait_bar.value = p * 100.0
+	_wait_label.text = "Getting the streets ready... %d%%" % int(p * 100.0)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("ui_cancel"):
 		return
 	if city != null and city.settings_menu.visible:
 		city.settings_menu.close()
 		get_viewport().set_input_as_handled()
+	elif account.is_open():
+		account.close()
+		get_viewport().set_input_as_handled()
 	elif _overlay.visible:
 		_close_overlay()
+		get_viewport().set_input_as_handled()
+	elif _pending >= 0:
+		_pending = -1                          # changed your mind while it loads
+		_wait_box.visible = false
 		get_viewport().set_input_as_handled()
 
 
@@ -82,12 +155,42 @@ func _on_new_game() -> void:
 func _start(continue_saved: bool) -> void:
 	if _starting:
 		return
+	if city == null or not is_instance_valid(city) or not city.ready_done:
+		_pending = 1 if continue_saved else 0
+		_wait_box.visible = true
+		_update_wait()
+		return
 	_starting = true
 	ui.visible = false
 	city.start_from_title(continue_saved)
 
 
+func _on_account() -> void:
+	_menu.visible = false
+	account.open()
+
+
+## Called by the account panel when it closes.
+func account_closed() -> void:
+	_menu.visible = true
+	_account_button.grab_focus()
+
+
+func _update_account() -> void:
+	if _account_label == null:
+		return
+	var on := Online.get_instance()
+	if on.signed_in():
+		var who := on.display_name if on.display_name != "" else on.email
+		_account_label.text = ("Signed in as %s   ·   cloud saves on" % who) if not on.offline else ("Signed in as %s   ·   offline, saving on this device" % who)
+		_account_button.text = "Account"
+	else:
+		_account_label.text = "Playing as guest   ·   saves stay on this device"
+		_account_button.text = "Sign in / Create account"
+
 func _on_settings() -> void:
+	if city == null or not is_instance_valid(city):
+		return                                 # (only for the first two frames)
 	_menu.visible = false
 	var sm: Control = city.settings_menu
 	sm.reparent(ui)                       # the HUD it lives in is hidden behind the title
@@ -176,6 +279,10 @@ func _build_ui() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(root)
+	# the skyline until the city has streamed in (then it fades out)
+	backdrop = TitleBackdrop.new()
+	backdrop.name = "Backdrop"
+	root.add_child(backdrop)
 	# a dark band on the left so the text reads over the city
 	var band := TextureRect.new()
 	var grad := Gradient.new()
@@ -196,7 +303,7 @@ func _build_ui() -> void:
 	# made more compact to fit, and kept inside the screen's safe area
 	var compact := DeviceProfile.is_handheld()
 	var phone := DeviceProfile.is_phone()
-	var safe: Vector4 = city.safe_margins if city != null else Vector4.ZERO
+	var safe: Vector4 = DeviceProfile.safe_margins(get_viewport())
 	var col := VBoxContainer.new()
 	col.name = "Column"
 	col.anchor_top = 0.0
@@ -230,18 +337,21 @@ func _build_ui() -> void:
 	col.add_child(gap)
 	_compact = compact
 
-	_loading = Label.new()
-	_loading.text = "Loading Monrovia..."
-	_loading.add_theme_font_size_override("font_size", 22)
-	col.add_child(_loading)
+	_account_label = Label.new()
+	_account_label.name = "AccountStatus"
+	_account_label.add_theme_font_size_override("font_size", 14 if phone else 16)
+	_account_label.add_theme_color_override("font_color", Color(0.85, 0.88, 0.93))
+	col.add_child(_account_label)
 
 	_menu = VBoxContainer.new()
 	_menu.add_theme_constant_override("separation", 6)
-	_menu.visible = false
 	col.add_child(_menu)
 	if SaveSystem.has_save():
 		_add_button("Continue", _on_continue)
 	_add_button("New Game", _on_new_game)
+	_add_button("Sign in / Create account", _on_account)
+	_account_button = _buttons[-1]
+	_account_button.name = "Account"
 	_add_button("Settings", _on_settings)
 	_add_button("Controls", _on_controls)
 	_add_button("Credits", _on_credits)
@@ -255,6 +365,23 @@ func _build_ui() -> void:
 	# wrap focus top <-> bottom
 	_buttons[0].focus_neighbor_top = _buttons[0].get_path_to(_buttons[-1])
 	_buttons[-1].focus_neighbor_bottom = _buttons[-1].get_path_to(_buttons[0])
+
+	# New Game / Continue pressed while the starting area is still downloading
+	_wait_box = VBoxContainer.new()
+	_wait_box.name = "Waiting"
+	_wait_box.visible = false
+	col.add_child(_wait_box)
+	_wait_label = Label.new()
+	_wait_label.add_theme_font_size_override("font_size", 16)
+	_wait_box.add_child(_wait_label)
+	_wait_bar = ProgressBar.new()
+	_wait_bar.custom_minimum_size = Vector2(300, 10)
+	_wait_bar.show_percentage = false
+	_wait_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = YELLOW
+	_wait_bar.add_theme_stylebox_override("fill", fill)
+	_wait_box.add_child(_wait_bar)
 
 	var ver := Label.new()
 	ver.text = version() + ("   ·   Browser version" if OS.has_feature("web") else "")
@@ -310,6 +437,13 @@ func _build_ui() -> void:
 	_overlay_back = _styled_button("Back")
 	_overlay_back.pressed.connect(_close_overlay)
 	ov.add_child(_overlay_back)
+
+	account = TitleAccount.new()
+	account.name = "AccountPanel"
+	account.title = self
+	root.add_child(account)
+	Online.get_instance().changed.connect(_update_account)
+	_update_account()
 
 
 func _add_button(label: String, cb: Callable) -> void:

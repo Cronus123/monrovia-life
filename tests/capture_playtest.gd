@@ -39,6 +39,8 @@ func snap(name: String) -> void:
 
 func run() -> void:
 	await process_frame
+	while title.city == null:              # the title loads the city after drawing its menu
+		await process_frame
 	city = title.city
 	city.save_path = OUT + "/save.json"
 	city.bug_report.dir_root = OUT + "/bug_reports"

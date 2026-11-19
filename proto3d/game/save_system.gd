@@ -16,6 +16,7 @@ static func save(state: GameState, player_pos: Vector3, path: String = PATH) -> 
 	data["version"] = VERSION
 	data["pos"] = [player_pos.x, player_pos.y, player_pos.z]
 	data["saved_at"] = Time.get_datetime_string_from_system()
+	data["saved_unix"] = int(Time.get_unix_time_from_system())     # compared with the cloud save
 	var tmp := path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:

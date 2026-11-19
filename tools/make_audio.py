@@ -3,6 +3,8 @@ Monrovia Life - synthesises every sound effect, ambience loop and music track us
 3D game, so the game's audio is original and free of third-party licences.
 
 Output: proto3d/audio/*.wav (22.05 kHz, 16-bit mono; Godot compresses them on import).
+The long ambience, music and radio loops ship as Ogg Vorbis: after regenerating them, run
+tools/wav_to_ogg.py (in Blender) and delete their .wav files.
 
     SFX:       engine_car, engine_keke, engine_truck (seamless loops, pitched by RPM in game),
                horn_car, horn_keke, siren (loop), skid (loop), crash, explosion, gunshot,

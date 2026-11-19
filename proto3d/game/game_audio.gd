@@ -55,10 +55,17 @@ func setup(main_node) -> void:
 	main = main_node
 	ensure_buses()
 	for n in ALL:
-		if not ResourceLoader.exists(DIR % n):
+		# the long music and ambience loops are Ogg Vorbis (tools/wav_to_ogg.py), effects .wav
+		var path := (DIR % n).replace(".wav", ".ogg")
+		if not ResourceLoader.exists(path):
+			path = DIR % n
+		if not ResourceLoader.exists(path):
 			continue
-		var s = load(DIR % n)
-		if s is AudioStreamWAV:
+		var s = load(path)
+		if s is AudioStreamOggVorbis:
+			(s as AudioStreamOggVorbis).loop = n in LOOPS
+			streams[n] = s
+		elif s is AudioStreamWAV:
 			if n in LOOPS:
 				(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 				(s as AudioStreamWAV).loop_begin = 0

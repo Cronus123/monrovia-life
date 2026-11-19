@@ -100,6 +100,13 @@ func run() -> void:
 			hi += 1
 	check(hi >= 4 and st.web_bytes > 1000000, "%d detailed tiles fetched, %.1f MB" % [hi, st.web_bytes / 1048576.0])
 	check(st.detailed_loaded(200.0) >= 4, "and built with collision (%d detailed tiles)" % st.detailed_loaded(200.0))
+	var metas := 0
+	for p in served:
+		if String(p).begins_with("/city/meta/") and String(p).ends_with(".json"):
+			metas += 1
+	await until(func(): return st.nearby(spawn, 200.0, "paths").size() > 0, 10.0)
+	check(metas >= 4 and st.nearby(spawn, 200.0, "paths").size() > 0 and st.nearby(spawn, 200.0, "parking").size() > 0,
+		"tile metadata comes over HTTP too (%d files): sidewalk paths and parking" % metas)
 	var ground := false
 	var space := st.get_world_3d().direct_space_state
 	await physics_frame
@@ -135,6 +142,16 @@ func run() -> void:
 		check(cfg.get_value(opt, "variant/thread_support", true) == false, "single-threaded (no special server headers needed)")
 		check(String(cfg.get_value(opt, "html/head_include", "")).contains("webgl2"), "the page checks for WebGL 2")
 		check(String(cfg.get_value(sec, "custom_features", "")) == "city3d", "starts on the title screen (city3d feature)")
+		for ex_path in ["proto3d/city/meta/*", "scripts/*", "sprites/*", "proto3d/models/ual/*", "proto3d/models/district_downtown.glb"]:
+			check(ex.contains(ex_path), "left out of index.pck: %s" % ex_path)
+		var shell := String(cfg.get_value(opt, "html/custom_html_shell", ""))
+		var shell_text := FileAccess.get_file_as_string(shell) if shell != "" else ""
+		check(shell == "res://web/shell.html" and shell_text.contains("serviceWorker.register('sw.js')") and shell_text.contains("$GODOT_CONFIG"),
+			"custom HTML shell registers the offline cache (sw.js)")
+		var sw := FileAccess.get_file_as_string("res://web/sw.js")
+		check(sw.contains("const BUILD = '") and sw.contains("const TILES = '") and sw.contains("/city/"),
+			"sw.js template with BUILD and TILES for tools/export_web.ps1")
+		check(cfg.get_value(opt, "html/experimental_virtual_keyboard", false) == true, "text boxes open the on-screen keyboard on touch screens")
 
 	print("browser shaders and saves")
 	for s in ["city_surfaces_web", "sky_web", "water_web"]:

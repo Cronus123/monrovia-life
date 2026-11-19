@@ -27,6 +27,9 @@
    15. Devices                (tests/smoke_devices.gd: phone/tablet/desktop detection, switching
                                 between keyboard, touch and gamepad, touch controls, gamepad
                                 menus, tablet layout and safe areas, light graphics on phones)
+   16. Accounts and cloud saves (tests/smoke_online.gd: sign-up / sign-in / tokens, play sessions
+                                and heartbeats, kicks, cloud saves, offline play - against a fake
+                                server, no network)
   and fails (exit code 1) if any step prints a script error, engine error or warning,
   or if the smoke test does not print "SMOKE TEST PASSED".
 
@@ -46,6 +49,7 @@ if (-not $Godot) {
     $candidates = @(
         "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe",
         "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64_console.exe",
+        "$env:USERPROFILE\Downloads\Godot_4.7.2\Godot_v4.7.2-stable_win64_console.exe",
         "$env:ProgramFiles\Godot\Godot_v4.7.2-stable_win64_console.exe"
     )
     $Godot = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -59,7 +63,7 @@ $outDir = Join-Path $project "tests\output"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 # Lines that count as failures. Godot prints these to stdout/stderr.
-$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED|SMOKEWPN CHECK FAILED|SMOKEWPN TEST FAILED|SMOKEPERKS CHECK FAILED|SMOKEPERKS TEST FAILED|SMOKELEGS CHECK FAILED|SMOKELEGS TEST FAILED|SMOKEDRIVE CHECK FAILED|SMOKEDRIVE TEST FAILED|SMOKEPLAY CHECK FAILED|SMOKEPLAY TEST FAILED|SMOKEWEB CHECK FAILED|SMOKEWEB TEST FAILED|SMOKEDEV CHECK FAILED|SMOKEDEV TEST FAILED)'
+$bad = '(SCRIPT ERROR|^ERROR:|^WARNING:|Parse Error|Compile Error|SMOKE CHECK FAILED|SMOKE TEST FAILED|SMOKE3D CHECK FAILED|SMOKE3D TEST FAILED|SMOKECITY CHECK FAILED|SMOKECITY TEST FAILED|SMOKEGAME CHECK FAILED|SMOKEGAME TEST FAILED|SMOKEPHYS CHECK FAILED|SMOKEPHYS TEST FAILED|SMOKEBT CHECK FAILED|SMOKEBT TEST FAILED|SMOKEWPN CHECK FAILED|SMOKEWPN TEST FAILED|SMOKEPERKS CHECK FAILED|SMOKEPERKS TEST FAILED|SMOKELEGS CHECK FAILED|SMOKELEGS TEST FAILED|SMOKEDRIVE CHECK FAILED|SMOKEDRIVE TEST FAILED|SMOKEPLAY CHECK FAILED|SMOKEPLAY TEST FAILED|SMOKEWEB CHECK FAILED|SMOKEWEB TEST FAILED|SMOKEDEV CHECK FAILED|SMOKEDEV TEST FAILED|SMOKEONLINE CHECK FAILED|SMOKEONLINE TEST FAILED)'
 
 # Engine messages that are not our bugs and recover by themselves. Jolt prints this one now
 # and then when physics steps run back to back (seen with the old car code too); it waits
@@ -107,7 +111,8 @@ $results = @(
     (Invoke-Step "12_smoke_drive" @("--headless", "--fixed-fps", "60", "--path", $project, "--script", "res://tests/smoke_drive.gd") "SMOKEDRIVE TEST PASSED"),
     (Invoke-Step "13_smoke_playtest" @("--headless", "--path", $project, "--script", "res://tests/smoke_playtest.gd") "SMOKEPLAY TEST PASSED"),
     (Invoke-Step "14_smoke_web" @("--headless", "--path", $project, "--script", "res://tests/smoke_web.gd") "SMOKEWEB TEST PASSED"),
-    (Invoke-Step "15_smoke_devices" @("--headless", "--path", $project, "--script", "res://tests/smoke_devices.gd") "SMOKEDEV TEST PASSED")
+    (Invoke-Step "15_smoke_devices" @("--headless", "--path", $project, "--script", "res://tests/smoke_devices.gd") "SMOKEDEV TEST PASSED"),
+    (Invoke-Step "16_smoke_online" @("--headless", "--path", $project, "--script", "res://tests/smoke_online.gd") "SMOKEONLINE TEST PASSED")
 )
 
 if ($results -contains $false) {

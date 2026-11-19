@@ -96,6 +96,7 @@ var _rotate_hint: Label
 var _back_down_ms := -1           # gamepad View held since (ms), -1 when up
 var _back_used := false
 var _mode_serial := -1            # InputMode.serial last acted on
+var _heartbeat: Timer             # online play session heartbeat (signed-in players)
 
 
 func _ready() -> void:
@@ -309,12 +310,87 @@ func start_from_title(continue_saved: bool) -> void:
 	else:
 		teleport_player(player.spawn_point)
 		new_game()
+	start_online_session()
 
 
 func quit_to_title() -> void:
 	save_game()
+	_end_online_session()                     # finishes in the background (Online outlives this scene)
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://proto3d/title.tscn")
+
+
+# ------------------------------------------------------------------ online (signed-in players)
+## Signed in: open a play session and send a heartbeat every 30 s with the input scheme and
+## the district. Guests and offline players skip all of it; errors never stop the game.
+func start_online_session() -> void:
+	var on := Online.get_instance()
+	if not on.signed_in():
+		return
+	if _heartbeat == null:
+		_heartbeat = Timer.new()
+		_heartbeat.wait_time = Online.HEARTBEAT_S
+		_heartbeat.process_mode = Node.PROCESS_MODE_ALWAYS     # keeps beating in the pause menu
+		_heartbeat.timeout.connect(_on_heartbeat)
+		add_child(_heartbeat)
+	var r: Dictionary = await on.start_session()
+	if not r["ok"] and String(r["error"]).contains("banned"):
+		_online_removed("This account is banned.")
+		return
+	if is_instance_valid(_heartbeat) and is_inside_tree():
+		_heartbeat.start()
+
+
+func _on_heartbeat() -> void:
+	var on := Online.get_instance()
+	if not on.signed_in():
+		_heartbeat.stop()
+		return
+	if on.session_id == "":
+		await on.start_session()               # was offline when the game started: try again
+		return
+	var r: Dictionary = await on.heartbeat(shops.district_at(focus_pos()) if is_inside_tree() else "")
+	if r.get("kicked", false) or r.get("banned", false):
+		_online_removed(String(r.get("reason", "")))
+
+
+## Kicked or banned by the server: say why and go back to the title (the game is saved).
+func _online_removed(reason: String) -> void:
+	if _heartbeat != null:
+		_heartbeat.stop()
+	if not is_inside_tree():
+		return
+	save_game()
+	get_tree().paused = true
+	if reason == "":
+		reason = "Your session was ended by the server."
+	hud.open_menu("Disconnected", reason, [{"label": "Back to the title screen"}], func(_i):
+		get_tree().paused = false
+		get_tree().change_scene_to_file("res://proto3d/title.tscn"))
+
+
+func _end_online_session() -> void:
+	if _heartbeat != null:
+		_heartbeat.stop()
+	var on := Online.get_instance()
+	if on.session_id != "":
+		on.end_session()
+
+
+## Quit to desktop: end the session first (waits at most 3 s), then quit.
+func _quit_game() -> void:
+	save_game()
+	var on := Online.get_instance()
+	if on.session_id != "":
+		var done := [false]
+		var f := func():
+			await on.end_session()
+			done[0] = true
+		f.call()
+		var end := Time.get_ticks_msec() + 3000
+		while not done[0] and Time.get_ticks_msec() < end:
+			await get_tree().process_frame
+	get_tree().quit()
 
 
 # ------------------------------------------------------------------ setup
@@ -495,8 +571,16 @@ func continue_game() -> void:
 		tutorial.start()                         # saved part-way through it: from the top
 
 
+## Manual saves and autosaves (missions, shops, the safehouse...): the local save always,
+## and a copy to the cloud for signed-in players (in the background; offline is fine).
 func save_game() -> void:
-	SaveSystem.save(state, player.global_position if car == null else car.global_position, save_path)
+	if not SaveSystem.save(state, player.global_position if car == null else car.global_position, save_path):
+		return
+	var on := Online.get_instance()
+	if on.signed_in():
+		var d = JSON.parse_string(FileAccess.get_file_as_string(save_path))
+		if d is Dictionary:
+			on.upload_save(d)
 
 
 func teleport_player(pos: Vector3) -> void:
@@ -1063,8 +1147,7 @@ func _on_pause_choice(i: int) -> void:
 		4:
 			quit_to_title()
 		5:
-			save_game()
-			get_tree().quit()
+			_quit_game()
 
 
 ## Skills (level and progress) and perks (unlocked, or what they still need).

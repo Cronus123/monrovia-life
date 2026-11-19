@@ -92,10 +92,34 @@ Upload the whole folder to any static host: no special headers (single-threaded 
 served as `application/wasm`, files up to ~40 MB, about 660 files. Long cache times for
 `city/*.glb` and gzip/brotli compression help.
 
+**Fast start:** the title menu shows as soon as the engine has started, over a drawn skyline;
+the city streams in behind it and fades in when the tiles near the camera are ready. New Game
+pressed before that waits for the starting area with a progress bar (Esc / B cancels). Each
+detailed tile's metadata (`city\meta\*.json`: sidewalk paths, parking, trees, signs) is fetched
+with the tile instead of being packed into `index.pck`, and the long music and ambience loops
+are Ogg Vorbis (`tools\wav_to_ogg.py`).
+
+**Offline cache:** the page is built from a custom HTML shell (`web\shell.html`) that registers
+`sw.js` (template in `web\sw.js`). `tools\export_web.ps1` copies it into the build with
+`BUILD` set to the Git commit (so each update replaces the cached engine and game) and `TILES`
+set to a hash of the tile files (so players only download the city again when it changes).
+
 Test it locally: `"<Blender>\5.3\python\bin\python.exe" -I tools\serve_web.py` and open
 http://127.0.0.1:8060/. `tools\bench_web.ps1` runs a first-visit benchmark in a fresh Microsoft
 Edge window (`?bench=1`: load time, FPS walking/sprinting/driving, download size, screenshots to
 `build\screens\web\`).
+
+## Accounts and cloud saves
+Playing as a guest is the default: saves stay on the device, as before. **Sign in / Create
+account** on the title screen takes an email, a password and a display name (3-20 letters,
+numbers, spaces or _). Signed in, the game also saves to the cloud (every manual save and
+autosave), and on sign-in it offers a cloud save that's newer than the one on the device. Only
+the refresh token is kept on the device (`user://online.cfg`), never the password.
+While you play, the game keeps a play session open on the server (a heartbeat every 30 s with
+the input scheme and the district); if the server ends the session (kick or ban) the game says
+why and goes back to the title. If the server can't be reached the game plays on as a guest.
+The backend is Supabase (`proto3d/game/online.gd`, REST API over HTTPRequest; the publishable
+key in it is meant for clients). The browser build ends the session when the tab closes.
 
 ## Controls
 Every control can be changed in **Settings → Controls** (saved to `user://settings.cfg`).
@@ -162,11 +186,11 @@ Game places (Auntie Musu, shops, taxi destinations) are in `proto3d/game/data/pl
 missions in `missions.json`, shop menus in `shops.json`.
 
 ## Tests
-`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs fifteen checks: Godot import, start-up,
+`powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs sixteen checks: Godot import, start-up,
 the 2D game, the 3D district, the city streaming, a play-through of every game system (economy,
 save, settings, input, audio, HUD, clock, traffic and traffic lights, cars, weapons and drive-bys,
 shops, taxi, missions, police, arrest, hospital) and the physics (vehicle tuning, tyres, crash
-damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, skills/perks/street life, the leg animation, driving (every vehicle laps a test ground), the playtest build (title screen, tutorial, pause menu, bug report) the browser build (tiles streamed over HTTP, export preset, browser shaders) and devices (phone/tablet detection, touch controls, gamepad menus, control switching, light mode). It fails on any error or warning.
+damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons, skills/perks/street life, the leg animation, driving (every vehicle laps a test ground), the playtest build (title screen, tutorial, pause menu, bug report) the browser build (tiles streamed over HTTP, export preset, browser shaders) and devices (phone/tablet detection, touch controls, gamepad menus, control switching, light mode) and accounts (sign-in, tokens, play sessions, kicks, cloud saves and offline play, against a fake server: no network). It fails on any error or warning.
 `tests/world_audit.gd` sweeps the city for physics/road/prop/people problems; `tests/perf_presets.gd` measures FPS per quality preset; `tests/capture_game.gd` takes screenshots.
 
 ## Project layout
@@ -176,6 +200,7 @@ damage, props, ragdolls, climbing, swimming) the Big Talk storyline, the weapons
 - `proto3d/world_streamer.gd` — streams the city tiles; `proto3d/city/` — generated city data.
 - `proto3d/` — player, cars, camera, characters; `proto3d/audio/` — synthesised sounds and music.
 - `tools/` — data and asset generators; `tests/` — automated checks and screenshot captures.
+- `web/` — the browser build's HTML shell and offline cache (`sw.js`).
 
 ## Credits
 See `CREDITS.md`. Map data © OpenStreetMap contributors (ODbL); the generated city tiles are a

@@ -22,7 +22,8 @@ $project = Split-Path -Parent $PSScriptRoot
 if (-not $Godot) {
     $Godot = @(
         "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe",
-        "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64_console.exe"
+        "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64_console.exe",
+        "$env:USERPROFILE\Downloads\Godot_4.7.2\Godot_v4.7.2-stable_win64_console.exe"
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
 if (-not $Godot) { Write-Host "Godot console executable not found (-Godot)." -ForegroundColor Red; exit 2 }
@@ -34,10 +35,38 @@ Write-Host "== exporting Web City" -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { Write-Host "export failed" -ForegroundColor Red; exit 1 }
 
 Write-Host "== copying city tiles" -ForegroundColor Cyan
-foreach ($lod in @("hi", "lo")) {
-    $dst = Join-Path $out "city\$lod"
+# hi and lo: the tile meshes; meta: each detailed tile's paths, parking, trees, signs and
+# shops (fetched with the tile, so they're not in index.pck)
+$tileFiles = @()
+foreach ($d in @(@("hi", "*.glb"), @("lo", "*.glb"), @("meta", "*.json"))) {
+    $dst = Join-Path $out "city\$($d[0])"
     New-Item -ItemType Directory -Force $dst | Out-Null
-    Copy-Item (Join-Path $project "proto3d\city\$lod\*.glb") $dst -Force
+    Copy-Item (Join-Path $project "proto3d\city\$($d[0])\$($d[1])") $dst -Force
+    $tileFiles += Get-ChildItem (Join-Path $project "proto3d\city\$($d[0])") -Filter $d[1] -File
+}
+
+Write-Host "== offline cache (sw.js)" -ForegroundColor Cyan
+# BUILD: this commit, so every update replaces the cached engine and game. TILES: a hash
+# of the tile files' contents, so it only changes (and players only re-download the city)
+# when the tiles were rebuilt.
+$commit = (& git -C $project rev-parse --short HEAD 2>$null)
+if (-not $commit) { $commit = "dev" }
+if (& git -C $project status --porcelain --untracked-files=no 2>$null) { $commit += "-dirty" + (Get-Date -Format "yyyyMMddHHmm") }
+$md5 = [Security.Cryptography.MD5]::Create()
+$list = New-Object Text.StringBuilder
+foreach ($f in ($tileFiles | Sort-Object FullName)) {
+    $st = [IO.File]::OpenRead($f.FullName)
+    try { $h = [BitConverter]::ToString($md5.ComputeHash($st)) } finally { $st.Dispose() }
+    [void]$list.Append("$($f.Directory.Name)/$($f.Name) $h`n")
+}
+$tilesHash = ([BitConverter]::ToString($md5.ComputeHash([Text.Encoding]::UTF8.GetBytes($list.ToString()))) -replace "-", "").Substring(0, 12).ToLower()
+$sw = [IO.File]::ReadAllText((Join-Path $project "web\sw.js"))
+$sw = [regex]::Replace($sw, "const BUILD = '[^']*';", "const BUILD = '$commit';")
+$sw = [regex]::Replace($sw, "const TILES = '[^']*';", "const TILES = 'tiles-$tilesHash';")
+[IO.File]::WriteAllText((Join-Path $out "sw.js"), $sw, (New-Object Text.UTF8Encoding $false))
+"  BUILD = $commit, TILES = tiles-$tilesHash"
+if (-not (Select-String -Path (Join-Path $out "index.html") -Pattern "serviceWorker.register('sw.js')" -SimpleMatch -Quiet)) {
+    Write-Host "index.html doesn't register sw.js (custom HTML shell missing?)" -ForegroundColor Red; exit 1
 }
 
 Write-Host "== hosting files (GitHub Pages and Apache/IONOS)" -ForegroundColor Cyan
@@ -52,7 +81,7 @@ AddType application/octet-stream .pck
 AddType model/gltf-binary .glb
 
 <IfModule mod_deflate.c>
-  AddOutputFilterByType DEFLATE text/html text/javascript application/javascript application/wasm application/octet-stream model/gltf-binary
+  AddOutputFilterByType DEFLATE text/html text/javascript application/javascript application/wasm application/octet-stream model/gltf-binary application/json
 </IfModule>
 
 <IfModule mod_headers.c>
@@ -60,8 +89,8 @@ AddType model/gltf-binary .glb
   <FilesMatch "\.(html|js|wasm|pck)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
-  # city tiles rarely change: let browsers keep them for a week
-  <FilesMatch "\.glb$">
+  # city tiles and their metadata rarely change: let browsers keep them for a week
+  <FilesMatch "\.(glb|json)$">
     Header set Cache-Control "public, max-age=604800"
   </FilesMatch>
 </IfModule>

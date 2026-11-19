@@ -212,6 +212,8 @@ func run() -> void:
 	title = load("res://proto3d/title.tscn").instantiate()
 	root.add_child(title)
 	await process_frame
+	while title.city == null:              # the title loads the city after drawing its menu
+		await process_frame
 	city = title.city
 	city.save_path = OUT + "/save.json"
 	city.bug_report.dir_root = OUT + "/bug_reports"

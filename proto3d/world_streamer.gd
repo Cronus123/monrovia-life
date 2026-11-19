@@ -114,6 +114,21 @@ func is_area_ready(p: Vector3, radius: float = 200.0) -> bool:
 	return true
 
 
+## How much of what is_area_ready() waits for has loaded, 0..1 (the title's progress bar).
+func area_progress(p: Vector3, radius: float = 200.0) -> float:
+	var k := tile_key(p)
+	var need := 0
+	var have := 0
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			var kk := k + Vector2i(dx, dy)
+			if _has_hi.has(kk) and _dist_from(kk, p) < radius:
+				need += 1
+				if tiles.has(kk) and tiles[kk]["lod"] == 2:
+					have += 1
+	return 1.0 if need == 0 else float(have) / need
+
+
 func _dist(k: Vector2i) -> float:
 	return _dist_from(k, focus)
 
@@ -232,7 +247,12 @@ func _load_tile(job: Dictionary) -> void:
 	var meta: Dictionary = {}
 	if job["lod"] == 2:
 		var mp: String = String(job["path"]).replace("/hi/", "/meta/").replace(".glb", ".json")
-		if FileAccess.file_exists(mp):
+		if job.has("meta_text"):
+			# browser build: fetched over HTTP with the tile (not in the game package)
+			var parsed = JSON.parse_string(String(job["meta_text"])) if String(job["meta_text"]) != "" else null
+			meta = parsed if parsed is Dictionary else {}
+			job.erase("meta_text")
+		elif FileAccess.file_exists(mp):
 			meta = JSON.parse_string(FileAccess.get_file_as_string(mp))
 	job["result"] = {"node": node, "shapes": shapes, "meta": meta}
 	call_deferred("_job_done", job)
@@ -518,9 +538,36 @@ func _fetch(job: Dictionary) -> void:
 		if first_tile_s == 0.0:
 			first_tile_s = Time.get_ticks_msec() / 1000.0
 		job["bytes"] = body
-		_parse_queue.append(job))
+		if job["lod"] == 2:
+			_fetch_meta(job)
+		else:
+			_parse_queue.append(job))
 	if first_request_s == 0.0:
 		first_request_s = Time.get_ticks_msec() / 1000.0
 	if req.request(_web_base() + rel) != OK:
 		req.queue_free()
 		_jobs.erase(job["key"])
+
+
+## Browser build: a detailed tile's metadata (sidewalk paths, parking, trees, signs, shops)
+## comes from <page>/city/meta/ next to the tile, not from the game package - that keeps
+## 4.5 MB of JSON out of index.pck. A missing or failed file just means an emptier tile.
+func _fetch_meta(job: Dictionary) -> void:
+	var req := HTTPRequest.new()
+	req.use_threads = false
+	req.accept_gzip = false
+	req.timeout = 0.0
+	add_child(req)
+	var rel: String = String(job["path"]).trim_prefix(CITY_DIR).replace("hi/", "meta/").replace(".glb", ".json")
+	req.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body: PackedByteArray):
+		req.queue_free()
+		if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+			web_bytes += body.size()
+			job["meta_text"] = body.get_string_from_utf8()
+		else:
+			job["meta_text"] = ""
+		_parse_queue.append(job))
+	if req.request(_web_base() + rel) != OK:
+		req.queue_free()
+		job["meta_text"] = ""
+		_parse_queue.append(job)
