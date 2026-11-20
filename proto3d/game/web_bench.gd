@@ -36,7 +36,9 @@ func run() -> void:
 	for k in city.load_marks:
 		results[k] = snappedf(float(city.load_marks[k]), 0.1)
 	await _seconds(3.0)
+	city.streamer.reset_profile()
 	results["title"] = await _measure(6.0)
+	results["title_streaming"] = _profile()
 	await _shot("title")
 	city.settings.tutorial = false
 	title._on_new_game()
@@ -59,7 +61,9 @@ func run() -> void:
 		var c0: Vector3 = city.start_car.global_position
 		await _seconds(2.0)
 		Input.action_press("p3_forward")
+		city.streamer.reset_profile()
 		results["drive"] = await _measure(12.0)
+		results["drive_streaming"] = _profile()
 		results["drove_m"] = snappedf(city.start_car.global_position.distance_to(c0), 0.1)
 		results["still_in_car"] = city.car != null
 		await _shot("drive")
@@ -99,6 +103,18 @@ func _measure(t: float) -> Dictionary:
 	var p99: float = frames[int(frames.size() * 0.99)] if frames.size() > 0 else 0.0
 	return {"fps": snappedf(frames.size() / (total / 1000.0), 0.1), "low1": snappedf(1000.0 / maxf(p99, 0.001), 0.1),
 		"worst_ms": roundi(frames.back()) if frames.size() > 0 else 0}
+
+
+## The streamer's work during the last measurement, rounded for the report.
+func _profile() -> Dictionary:
+	var out := {}
+	for k in city.streamer.prof:
+		if city.streamer.prof[k] is Array:
+			out[k] = (city.streamer.prof[k] as Array).duplicate()
+			continue
+		var p: Dictionary = city.streamer.prof[k]
+		out[k] = {"n": p["n"], "ms": snappedf(p["ms"], 0.1), "worst": snappedf(p["worst"], 0.1)}
+	return out
 
 
 ## Screenshot to the local test server (tools/serve_web.py saves it in build/screens/web/).

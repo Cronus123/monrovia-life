@@ -102,7 +102,9 @@ func _process(delta: float) -> void:
 	var r := 170.0 + sin(_t * 0.05) * 30.0
 	var pos := center + Vector3(cos(a) * r, 62.0 + sin(_t * 0.08) * 10.0, sin(a) * r)
 	city.flyover_cam.global_transform = Transform3D(Basis.IDENTITY, pos).looking_at(center + Vector3(0, 8, 0))
-	city.flyover_focus = center.lerp(Vector3(pos.x, center.y, pos.z), 0.4)
+	# the city streams around the orbit's centre, not the camera: the detailed ring loads once,
+	# then nothing new streams in while the camera circles (it used to drag new tiles in)
+	city.flyover_focus = center
 
 
 ## The tiles around the camera are in: fade the skyline out and the city in.

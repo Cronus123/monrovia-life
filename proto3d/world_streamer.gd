@@ -12,6 +12,19 @@ signal tile_loaded(key: Vector2i, detailed: bool)
 const CITY_DIR := "res://proto3d/city/"
 var hi_radius := 420.0          # detailed tiles (Settings: graphics quality)
 var lo_radius := 1300.0         # low-detail ring
+## Title screen flyover (main_city.title_mode): the camera circles 140-200 m out and looks
+## inwards, so detailed tiles further out are behind it - stream a smaller area there.
+var title_view := false
+const TITLE_HI := 210.0
+const TITLE_LO := 700.0
+
+
+func _hi_r() -> float:
+	return minf(hi_radius, TITLE_HI) if title_view else hi_radius
+
+
+func _lo_r() -> float:
+	return minf(lo_radius, TITLE_LO) if title_view else lo_radius
 var detail_range := 260.0       # building details fade out beyond this (Settings: quality)
 const MAX_JOBS := 3
 const ATTACH_PER_FRAME := 1
@@ -27,6 +40,8 @@ var first_tile_s := 0.0
 var _parse_queue: Array = []
 var _web_failed := {}            # tile -> failed fetches (gives up after 3)
 const WEB_MAX_REQUESTS := 4
+const WEB_FRAME_BUDGET_US := 6000      # browser: parse a tile only if the frame has used less
+var _col_queue: Array = []        # browser: detailed tiles waiting for their collision shapes
 const SHADER := preload("res://proto3d/city_surfaces.gdshader")
 const SHADER_WEB := preload("res://proto3d/city_surfaces_web.gdshader")   # quick to compile in browsers
 const PropsScript := preload("res://proto3d/props.gd")
@@ -45,6 +60,52 @@ var _plants: Array = []         # Palm, Tree, Bush meshes (proto3d/city/vegetati
 var grass_enabled := true      # Settings: off on Low
 var _prop_queue: Array = []     # [tile instance id, meta chunk]: physics props, a few per frame
 const PROPS_PER_FRAME := 6
+## Time spent per kind of streaming work, for the browser benchmark (WebBench): ms totals,
+## the worst single item, and counts. reset_profile() starts a new window.
+var prof := {}
+
+
+func reset_profile() -> void:
+	prof = {}
+	_prof_t0 = Time.get_ticks_msec()
+	_last_frame_us = Time.get_ticks_usec()
+
+
+var _prof_t0 := 0
+
+
+## Worst total streaming work in one frame (ms), and the frames over 50 ms.
+var _frame_ms := 0.0
+
+
+var _last_frame_us := 0
+var _last_attached := ""         # what _attach added last frame (for the spike log)
+
+
+func _frame_work() -> void:
+	var now := Time.get_ticks_usec()
+	var dt := (now - _last_frame_us) / 1000.0
+	_last_frame_us = now
+	if dt > 120.0 and _last_frame_us > 0 and dt < 100000.0:
+		var spikes: Array = prof.get_or_add("spikes", [])
+		if spikes.size() < 12:
+			spikes.append([roundi(dt), Time.get_ticks_msec() - _prof_t0, _last_attached, snappedf(_frame_ms, 0.1), _jobs.size(), _parse_queue.size(), _prop_queue.size()])
+	_last_attached = ""
+	if _frame_ms > 0.0:
+		var p: Dictionary = prof.get_or_add("frame", {"n": 0, "ms": 0.0, "worst": 0.0})
+		p["worst"] = maxf(float(p["worst"]), _frame_ms)
+		if _frame_ms > 50.0:
+			p["n"] += 1
+	_frame_ms = 0.0
+
+
+func _prof_add(kind: String, t0: int) -> void:
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	var p: Dictionary = prof.get_or_add(kind, {"n": 0, "ms": 0.0, "worst": 0.0})
+	p["n"] += 1
+	p["ms"] += ms
+	p["worst"] = maxf(float(p["worst"]), ms)
+	_frame_ms += ms
 
 
 func _ready() -> void:
@@ -143,18 +204,41 @@ func _dist_from(k: Vector2i, p: Vector3) -> float:
 
 
 func _process(delta: float) -> void:
-	if web and not _parse_queue.is_empty():
-		_load_tile(_parse_queue.pop_front())
+	_frame_work()
+	var frame_t0 := Time.get_ticks_usec()
+	# browser: a detailed tile's collision meshes are built one per frame before it is
+	# attached (it never shows without them), instead of all in the frame that parsed it
+	if web and not _col_queue.is_empty():
+		var tc := Time.get_ticks_usec()
+		_build_next_collision()
+		_prof_add("collision", tc)
 	# finish loaded jobs (a few per frame)
 	for _i in ATTACH_PER_FRAME:
 		if _ready_queue.is_empty():
 			break
-		_attach(_ready_queue.pop_front())
+		var ta := Time.get_ticks_usec()
+		var job_a: Dictionary = _ready_queue.pop_front()
+		var pending: Array = (job_a["result"] as Dictionary).get("pending_cols", []) if job_a["result"] is Dictionary else []
+		if not pending.is_empty():
+			_col_queue.append(job_a)
+			continue
+		_last_attached = ("hi" if int(job_a["lod"]) == 2 else "lo")
+		_attach(job_a)
+		_prof_add("attach", ta)
+	# browser: parse a fetched tile (main thread, no threads there) only in a frame that has
+	# done little else, so two big pieces of work never land in the same frame
+	if web and not _parse_queue.is_empty() and (Time.get_ticks_usec() - frame_t0) < WEB_FRAME_BUDGET_US:
+		var t0 := Time.get_ticks_usec()
+		var pj: Dictionary = _parse_queue.pop_front()
+		_load_tile(pj)
+		_prof_add(("build_hi" if not pj.has("gltf") and pj.has("result") else "read_hi") if int(pj["lod"]) == 2 else "parse_lo", t0)
 	if not _prop_queue.is_empty():
 		var job: Array = _prop_queue.pop_front()
 		var tile := instance_from_id(job[0]) as Node3D
 		if tile != null and tile.is_inside_tree():
+			var tp := Time.get_ticks_usec()
 			PropsScript.spawn(tile, job[1], _mats["Glow"], _mats["Props"])
+			_prof_add("props", tp)
 	_timer -= delta
 	if _timer > 0.0:
 		return
@@ -165,15 +249,17 @@ func _process(delta: float) -> void:
 func _update_wanted() -> void:
 	var want := {}
 	var fk := tile_key(focus)
-	var r := int(ceil(lo_radius / tile_size)) + 1
+	var hi_r := _hi_r()
+	var lo_r := _lo_r()
+	var r := int(ceil(lo_r / tile_size)) + 1
 	for t in manifest["tiles"]:
 		var k := Vector2i(t[0], t[1])
 		if absi(k.x - fk.x) > r or absi(k.y - fk.y) > r:
 			continue
 		var d := _dist(k)
-		if d < hi_radius and _has_hi.has(k):
+		if d < hi_r and _has_hi.has(k):
 			want[k] = 2
-		elif d < lo_radius:
+		elif d < lo_r:
 			want[k] = 1
 	# unload tiles no longer wanted
 	for k in tiles.keys():
@@ -212,15 +298,28 @@ func _start_job(k: Vector2i, lod: int) -> void:
 
 ## Worker thread: parse the glb, build collision shapes, assign shared materials.
 func _load_tile(job: Dictionary) -> void:
-	var bytes: PackedByteArray = job["bytes"] if job.has("bytes") else FileAccess.get_file_as_bytes(job["path"])
-	job.erase("bytes")
 	var node: Node3D = null
-	if not bytes.is_empty():
-		var doc := GLTFDocument.new()
-		var state := GLTFState.new()
-		if doc.append_from_buffer(bytes, "", state) == OK:
-			node = doc.generate_scene(state) as Node3D
+	if job.has("gltf"):
+		# browser, second half: build the scene from the glb read last time
+		var g: Array = job["gltf"]
+		job.erase("gltf")
+		node = (g[0] as GLTFDocument).generate_scene(g[1]) as Node3D
+	else:
+		var bytes: PackedByteArray = job["bytes"] if job.has("bytes") else FileAccess.get_file_as_bytes(job["path"])
+		job.erase("bytes")
+		if not bytes.is_empty():
+			var doc := GLTFDocument.new()
+			var state := GLTFState.new()
+			if doc.append_from_buffer(bytes, "", state) == OK:
+				if web and int(job["lod"]) == 2:
+					# browser (main thread): a detailed tile is read in one frame and built in
+					# a later one, so neither half makes a long frame on its own
+					job["gltf"] = [doc, state]
+					_parse_queue.push_front(job)
+					return
+				node = doc.generate_scene(state) as Node3D
 	var shapes: Array = []
+	var pending: Array = []
 	if node != null:
 		for mi in node.find_children("*", "MeshInstance3D", true, false):
 			var m := mi as MeshInstance3D
@@ -230,7 +329,10 @@ func _load_tile(job: Dictionary) -> void:
 				if _mats.has(nm):
 					m.set_surface_override_material(i, _mats[nm])
 			if String(m.name).ends_with("-col"):
-				shapes.append([m, m.mesh.create_trimesh_shape()])
+				if web and int(job["lod"]) == 2:
+					pending.append(m)          # built later, one per frame (_build_next_collision)
+				else:
+					shapes.append([m, m.mesh.create_trimesh_shape()])
 			if String(m.name) == "Props":
 				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 			elif String(m.name) == "Foliage":
@@ -254,8 +356,22 @@ func _load_tile(job: Dictionary) -> void:
 			job.erase("meta_text")
 		elif FileAccess.file_exists(mp):
 			meta = JSON.parse_string(FileAccess.get_file_as_string(mp))
-	job["result"] = {"node": node, "shapes": shapes, "meta": meta}
+	job["result"] = {"node": node, "shapes": shapes, "meta": meta, "pending_cols": pending}
 	call_deferred("_job_done", job)
+
+
+## Browser: one collision shape for the first tile waiting; attaches it when it has all.
+func _build_next_collision() -> void:
+	var job: Dictionary = _col_queue[0]
+	var res: Dictionary = job["result"]
+	var pending: Array = res["pending_cols"]
+	if not pending.is_empty():
+		var m: MeshInstance3D = pending.pop_front()
+		res["shapes"].append([m, m.mesh.create_trimesh_shape()])
+	if pending.is_empty():
+		_col_queue.pop_front()
+		_last_attached = "hi"
+		_attach(job)
 
 
 func _job_done(job: Dictionary) -> void:
@@ -274,7 +390,7 @@ func _attach(job: Dictionary) -> void:
 		return
 	# still wanted at this detail?
 	var d := _dist(k)
-	var still: int = 2 if (d < hi_radius and _has_hi.has(k)) else (1 if d < lo_radius else 0)
+	var still: int = 2 if (d < _hi_r() and _has_hi.has(k)) else (1 if d < _lo_r() else 0)
 	if still != job["lod"]:
 		node.queue_free()
 		return
@@ -304,6 +420,9 @@ func _exit_tree() -> void:
 		_free_job(job)
 	for job in _ready_queue:
 		_free_job(job)
+	for job in _col_queue:
+		_free_job(job)
+	_col_queue.clear()
 	_jobs.clear()
 	_ready_queue.clear()
 
@@ -316,6 +435,7 @@ func _free_job(job: Dictionary) -> void:
 
 
 func _free_tile(k: Vector2i) -> void:
+	_prof_add("unload", Time.get_ticks_usec())
 	(tiles[k]["node"] as Node).queue_free()
 	tiles.erase(k)
 
@@ -416,7 +536,9 @@ func _add_plants(tile: Node3D, meta: Dictionary) -> void:
 func _add_signs_later(id: int, meta: Dictionary) -> void:
 	var tile := instance_from_id(id) as Node3D
 	if tile != null and tile.is_inside_tree():
+		var t0 := Time.get_ticks_usec()
 		_add_signs(tile, meta)
+		_prof_add("dress", t0)
 
 
 func _add_signs(tile: Node3D, meta: Dictionary) -> void:
@@ -493,6 +615,108 @@ func _sign_mat() -> StandardMaterial3D:
 		m.albedo_color = Color("#1f6b3a")
 		_mats["Sign"] = m
 	return _mats["Sign"]
+
+
+## Draws one of everything the tiles show (each tile material, plain and fading, plants,
+## grass, labels, signs, street props) a few metres in front of `cam` for a few frames.
+## Browsers compile a shader the first time something uses it, and that used to happen
+## mid-flyover (or mid-drive): 200-600 ms frames whenever a new kind of thing came into
+## view. Called while the title's skyline backdrop still covers the 3D view.
+func warm_up(cam: Camera3D) -> void:
+	if cam == null:
+		return
+	var root := Node3D.new()
+	root.name = "ShaderWarmUp"
+	cam.add_child(root)
+	root.position = Vector3(0, 0, -6)
+	var quad := _warm_quad()
+	var x := -2.0
+	var items: Array[GeometryInstance3D] = []
+	for n in _mats:
+		for fade in [false, true]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = quad
+			mi.set_surface_override_material(0, _mats[n])
+			if fade:
+				# building details fade out with distance: that's a different shader version
+				mi.visibility_range_end = 6.5
+				mi.visibility_range_end_margin = 1.0
+				mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			items.append(mi)
+	for mesh in _plants:
+		if mesh == null:
+			continue
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = 1
+		mm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3.ONE * 0.05), Vector3.ZERO))
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		items.append(mmi)
+	var gm := MultiMesh.new()
+	gm.transform_format = MultiMesh.TRANSFORM_3D
+	gm.mesh = _grass_mesh
+	gm.instance_count = 1
+	gm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3.ONE * 0.2), Vector3.ZERO))
+	var gmi := MultiMeshInstance3D.new()
+	gmi.multimesh = gm
+	gmi.material_override = _mats["Foliage"]
+	gmi.visibility_range_end = 75.0
+	gmi.visibility_range_end_margin = 15.0
+	gmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	items.append(gmi)
+	for shaded in [true, false]:
+		var lab := Label3D.new()
+		lab.text = "Monrovia"
+		lab.shaded = shaded
+		lab.double_sided = not shaded
+		lab.pixel_size = 0.002
+		lab.outline_size = 0
+		items.append(lab)
+	var sign_box := MeshInstance3D.new()
+	sign_box.mesh = BoxMesh.new()
+	sign_box.material_override = _sign_mat()
+	items.append(sign_box)
+	var post := MeshInstance3D.new()
+	post.mesh = CylinderMesh.new()
+	post.material_override = _mats["Props"]
+	items.append(post)
+	for key in ["pole", "lamp_head", "bin", "drum", "crate", "stall_canopy", "stall_table", "produce_0"]:
+		var pm := MeshInstance3D.new()
+		pm.mesh = PropsScript._mesh(key)
+		if key == "lamp_head":
+			pm.material_override = _mats["Glow"]
+		items.append(pm)
+	for it in items:
+		it.scale = Vector3.ONE * 0.1 if not (it is MultiMeshInstance3D) else Vector3.ONE
+		it.position = Vector3(x, 0, 0)
+		it.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		x += 0.12
+		root.add_child(it)
+	_free_warm_up.call_deferred(root.get_instance_id(), 4)
+
+
+func _free_warm_up(id: int, frames_left: int) -> void:
+	var n := instance_from_id(id) as Node
+	if n == null:
+		return
+	if frames_left > 0:
+		await get_tree().process_frame
+		_free_warm_up(id, frames_left - 1)
+		return
+	n.queue_free()
+
+
+## A small quad with the attributes the tile meshes have (normals, vertex colours).
+func _warm_quad() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for v in [Vector3(-1, -1, 0), Vector3(1, -1, 0), Vector3(1, 1, 0), Vector3(-1, -1, 0), Vector3(1, 1, 0), Vector3(-1, 1, 0)]:
+		st.set_color(Color(0.7, 0.7, 0.7))
+		st.set_normal(Vector3(0, 0, 1))
+		st.add_vertex(v)
+	return st.commit()
 
 
 ## Sidewalk paths and parking spots from the detailed tiles within `radius` of p.

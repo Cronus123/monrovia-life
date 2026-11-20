@@ -296,12 +296,15 @@ func _enter_title() -> void:
 	add_child(flyover_cam)
 	flyover_cam.make_current()
 	flyover_focus = player.spawn_point
+	streamer.title_view = true
+	streamer.warm_up(flyover_cam)              # compile the tiles' shaders behind the backdrop
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 ## From the title screen: start a new game or continue the saved one.
 func start_from_title(continue_saved: bool) -> void:
 	title_mode = false
+	streamer.title_view = false
 	if flyover_cam != null:
 		flyover_cam.queue_free()
 		flyover_cam = null
@@ -980,7 +983,11 @@ func _process(delta: float) -> void:
 	_people_t -= delta
 	if _people_t <= 0.0:
 		_people_t = 0.5
+		var tp := Time.get_ticks_usec()
+		var before := peds.size() + cars.size()
 		_manage_population()
+		if peds.size() + cars.size() != before or Time.get_ticks_usec() - tp > 20000:
+			streamer._prof_add("people", tp)          # browser benchmark (WebBench)
 	if _back_down_ms >= 0 and not _back_used and int(clock_ms.call()) - _back_down_ms >= BACK_HOLD_MS:
 		_back_used = true                       # gamepad View held: perk ability
 		perks.use_ability()
