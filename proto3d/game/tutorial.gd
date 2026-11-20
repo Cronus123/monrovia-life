@@ -296,6 +296,22 @@ func _update_ui() -> void:
 	_title.text = "%s   ·   %d / %d" % [String(data["title"]).to_upper(), idx + 1, steps.size()]
 	_hint.text = objective()
 	_panel.visible = not main.hud.menu_open and not main.hud.map_open
+	relayout()
+
+
+## Width and text size for the screen: on a phone the panel fits between the status panel
+## and the minimap (it used to cover both), with slightly smaller text.
+func relayout() -> void:
+	if _panel == null or main == null:
+		return
+	var compact: bool = main.hud.compact
+	var w: float = main.hud.top_band_width(660.0)
+	_panel.offset_left = -w / 2.0
+	_panel.offset_right = w / 2.0
+	_hint.add_theme_font_size_override("font_size", 16 if compact else 20)
+	_say.add_theme_font_size_override("font_size", 13 if compact else 16)
+	_title.add_theme_font_size_override("font_size", 13 if compact else 15)
+	_skip.visible = not compact          # (unwrapped, it widened the panel past the minimap)
 
 
 ## A straw training dummy on a post: counts hits and wobbles. Melee finds it through

@@ -90,7 +90,9 @@ and Import save. F8 bug reports download a .txt and a .png.
 
 Upload the whole folder to any static host: no special headers (single-threaded build), .wasm
 served as `application/wasm`, files up to ~40 MB, about 660 files. Long cache times for
-`city/*.glb` and gzip/brotli compression help.
+`city/*.glb` and gzip/brotli compression help. For Apache hosts (IONOS) the export writes
+`.htaccess` (types, gzip, the page/engine/game always revalidated) and `city\.htaccess` (gzip
+and a week's cache for the tiles and `city\meta\*.json`); GitHub Pages ignores both.
 
 **Fast start:** the title menu shows as soon as the engine has started, over a drawn skyline;
 the city streams in behind it and fades in when the tiles near the camera are ready. New Game
@@ -176,6 +178,7 @@ The tools run with **Blender 5.3** and its bundled Python (no other installs nee
 |---|---|
 | Download map + elevation data | `powershell -ExecutionPolicy Bypass -File tools\fetch_map_data.ps1` |
 | Build the city tiles, road graph, places, minimap | `"<Blender>\5.3\python\bin\python.exe" -I tools\build_osm_city.py` |
+| Audit the built tiles (buildings on roads, floating or sunk props) | `"<Blender>\5.3\python\bin\python.exe" -I tools\audit_city.py --strict` |
 | Synthesise all sound effects and music | `"<Blender>\5.3\python\bin\python.exe" -I tools\make_audio.py` |
 | Vehicle models | `"<Blender>\blender.exe" -b blender\monrovia_city.blend -P tools\export_district.py` |
 | Default controls into project.godot | `Godot_console.exe --headless --path . --script res://proto3d/game/write_input_map.gd` |

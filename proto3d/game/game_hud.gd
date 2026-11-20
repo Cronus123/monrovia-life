@@ -10,12 +10,15 @@ signal menu_closed
 
 const NAVY := Color(0.063, 0.102, 0.196, 0.86)
 const MAP_ZOOM := 2.0             # minimap: screen pixels per map pixel (map pixel = 4 m)
+const MINI_H := 190.0             # minimap height; on phones (set_compact) a shorter one
+const MINI_H_COMPACT := 140.0
 
 var state: GameState
 var main                          # main_city.gd
 var credits := ""
 var menu_open := false
 var map_open := false
+var compact := false              # phone layout (set_compact)
 
 var _money: Label
 var _clock: Label
@@ -136,7 +139,7 @@ func _build() -> void:
 	_mini = Panel.new()
 	_mini.add_theme_stylebox_override("panel", _style(0.9))
 	_mini.clip_contents = true
-	_mini.size = Vector2(260, 190)
+	_mini.size = Vector2(260, MINI_H)
 	_mini.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_mini.position = Vector2(-272, 12)
 	root.add_child(_mini)
@@ -292,6 +295,72 @@ func apply_safe_area(m: Vector4) -> void:
 	_root.offset_top = m.y
 	_root.offset_right = -m.z
 	_root.offset_bottom = -m.w
+
+
+## Phones in landscape are only 480 canvas units tall: a shorter minimap there, with the
+## wanted stars tucked under it, so the touch buttons' outer arc (Crouch, Roll) has room
+## below them instead of covering the stars.
+func set_compact(on: bool) -> void:
+	if _mini == null:
+		return
+	compact = on
+	# messages along the top: between the status panel and the minimap
+	var w := top_band_width(600.0)
+	_toasts.offset_left = -w / 2.0
+	_toasts.offset_right = w / 2.0
+	_layout_bottom_panels()
+	var h := MINI_H_COMPACT if on else MINI_H
+	_mini.offset_bottom = _mini.offset_top + h
+	# offsets, not position: both hang off the top-right anchor once the HUD is laid out
+	_stars.offset_top = 12.0 + h + 6.0
+	_stars.offset_bottom = _stars.offset_top + 30.0
+
+
+## Objective, prompt and vehicle panels along the bottom: centred and one line normally; on
+## a phone they sit in the gap between the touch joystick and the button arc (the same
+## sizes as TouchControls.relayout uses for a phone) and wrap upwards, so a long
+## objective doesn't run under the buttons.
+func _layout_bottom_panels() -> void:
+	# [panel, top edge normally, bottom edge on a phone]
+	var rows := [[_prompt, -166.0, -152.0], [_objective, -122.0, -94.0], [_vehicle, -82.0, -50.0]]
+	var root_w := _root.size.x if _root.size.x > 1.0 else get_viewport().get_visible_rect().size.x
+	var r := 33.0                                    # phone touch button radius
+	var left := 4.0 + r + 1.7 * r + 2.0 * r + 8.0  # right edge of the joystick's resting circle
+	var right := root_w - (4.0 + r + 5.6 * r + r + 8.0)   # left edge of the outer button arc
+	var w := maxf(220.0, right - left)
+	var mid := (left + right) / 2.0 - root_w / 2.0
+	for row in rows:
+		var l: Label = row[0]
+		if l == null:
+			continue
+		if compact:
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.grow_vertical = Control.GROW_DIRECTION_BEGIN
+			l.offset_left = mid - w / 2.0
+			l.offset_right = mid + w / 2.0
+			l.offset_top = float(row[2]) - 30.0
+			l.offset_bottom = float(row[2])
+		else:
+			l.autowrap_mode = TextServer.AUTOWRAP_OFF
+			l.grow_vertical = Control.GROW_DIRECTION_END
+			l.offset_left = 0.0
+			l.offset_right = 0.0
+			l.position.y = float(row[1])
+			l.reset_size()
+
+
+## Width for the panels along the top centre (messages, the tutorial): `full`, or less on
+## a narrow canvas (phones, tablets): the room between the status panel and the minimap.
+func top_band_width(full: float) -> float:
+	if _root == null:
+		return full
+	var w := _root.size.x if _root.size.x > 1.0 else get_viewport().get_visible_rect().size.x
+	return clampf(w - 2.0 * (272.0 + 8.0), 240.0, full)
+
+
+## The minimap and wanted stars in canvas units (the touch controls must stay clear of them).
+func top_right_rects() -> Array:
+	return [_mini.get_global_rect(), Rect2(_stars.get_global_position() + Vector2(2, 2), Vector2(130, 26))]
 
 
 # ------------------------------------------------------------------ menus

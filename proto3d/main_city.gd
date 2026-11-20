@@ -95,6 +95,9 @@ var safe_margins := Vector4.ZERO  # safe area in canvas units (left, top, right,
 var _rotate_hint: Label
 var _back_down_ms := -1           # gamepad View held since (ms), -1 when up
 var _back_used := false
+## Milliseconds clock for the View tap / hold timing; tests swap in a fake one so a slow
+## frame can't turn a tap into a hold.
+var clock_ms: Callable = func() -> int: return Time.get_ticks_msec()
 var _mode_serial := -1            # InputMode.serial last acted on
 var _heartbeat: Timer             # online play session heartbeat (signed-in players)
 
@@ -250,6 +253,8 @@ func apply_device_layout() -> void:
 		call_deferred("apply_device_layout")     # the canvas size changes with the scale
 	safe_margins = DeviceProfile.safe_margins(get_viewport())
 	hud.apply_safe_area(safe_margins)
+	hud.set_compact(DeviceProfile.is_phone())
+	tutorial.relayout()
 	if touch != null:
 		touch.layout_kind = DeviceProfile.kind
 		touch.margins = safe_margins
@@ -976,7 +981,7 @@ func _process(delta: float) -> void:
 	if _people_t <= 0.0:
 		_people_t = 0.5
 		_manage_population()
-	if _back_down_ms >= 0 and not _back_used and Time.get_ticks_msec() - _back_down_ms >= BACK_HOLD_MS:
+	if _back_down_ms >= 0 and not _back_used and int(clock_ms.call()) - _back_down_ms >= BACK_HOLD_MS:
 		_back_used = true                       # gamepad View held: perk ability
 		perks.use_ability()
 	if not title_mode and Input.is_action_pressed("p3_fire") and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.get_connected_joypads().size() > 0 or InputMode.is_touch()):
@@ -1012,7 +1017,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.toggle_map()
 				get_tree().paused = false
 			else:
-				_back_down_ms = Time.get_ticks_msec()
+				_back_down_ms = int(clock_ms.call())
 				_back_used = false
 		elif not jb.pressed and _back_down_ms >= 0:
 			if not _back_used:

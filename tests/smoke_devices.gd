@@ -331,6 +331,26 @@ func run() -> void:
 	for id in ["fire", "jump", "aim", "car", "use", "weapon", "reload", "crouch", "dodge"]:
 		right_only = right_only and city.touch._pos[id].x > vs.x * 0.5
 	check(right_only, "phone: action buttons under the right thumb")
+	# a short phone screen: landscape phones are 480 canvas units tall at the phone UI scale
+	# (16:9 or wider). Crouch and Roll used to sit on the wanted stars there.
+	var root_win: Window = root
+	var old_win_size := root_win.size
+	root_win.size = Vector2i(1280, 720)               # 16:9 (headless windows aren't)
+	root_win.content_scale_factor = DeviceProfile.UI_SCALE[DeviceProfile.PHONE]
+	await frames(4)
+	city.hud.apply_safe_area(phone_m)
+	city.hud.set_compact(true)
+	city.touch.margins = phone_m                       # the resize re-ran apply_device_layout
+	city.touch.relayout()
+	await frames(2)
+	check(city.touch.size.y <= 481.0, "short phone canvas (%.0f units tall)" % city.touch.size.y)
+	check(_layout_ok(phone_m), "short phone layout: no overlaps, inside the safe area")
+	check(_clear_of_hud(), "short phone: touch buttons clear of the minimap and wanted stars")
+	root_win.content_scale_factor = 1.0
+	root_win.size = old_win_size
+	city.hud.set_compact(false)
+	city.hud.apply_safe_area(Vector4.ZERO)
+	await frames(2)
 	DeviceProfile.kind = DeviceProfile.TABLET
 	city.touch.layout_kind = DeviceProfile.TABLET
 	city.touch.margins = Vector4(8, 8, 8, 20)
@@ -446,23 +466,35 @@ func run() -> void:
 	check(not city.settings_menu.visible, "B leaves Settings")
 	city.hud.menu_open = false
 	paused = false
-	# View: tap = map, hold = perk ability
+	# View: tap = map, hold = perk ability. On a fake clock: a slow headless frame (tiles
+	# loading) used to stretch the "tap" past the 450 ms hold time now and then.
+	var fake := {"ms": 1000}
+	var real_clock: Callable = city.clock_ms
+	city.clock_ms = func() -> int: return int(fake["ms"])
 	pad_button(JOY_BUTTON_BACK, true)
+	await frames(2)
+	fake["ms"] += city.BACK_HOLD_MS - 300                # a quick tap: well under the hold time
 	await frames(2)
 	pad_button(JOY_BUTTON_BACK, false)
 	await frames(2)
-	check(city.hud.map_open, "View tap opens the map")
+	check(city.hud.map_open and not city._back_used, "View tap opens the map")
 	pad_button(JOY_BUTTON_BACK, true)
 	await frames(2)
 	pad_button(JOY_BUTTON_BACK, false)
 	await frames(2)
 	check(not city.hud.map_open and not paused, "and closes it")
 	pad_button(JOY_BUTTON_BACK, true)
-	await seconds(0.7)
+	await frames(2)
+	fake["ms"] += city.BACK_HOLD_MS - 50                 # just short of a hold: nothing yet
+	await frames(2)
+	check(not city._back_used and not city.hud.map_open, "View held under the hold time: nothing yet")
+	fake["ms"] += 300                                    # past it
+	await frames(2)
 	check(city._back_used and not city.hud.map_open, "holding View uses the perk ability, no map")
 	pad_button(JOY_BUTTON_BACK, false)
 	await frames(2)
 	check(not city.hud.map_open and city._back_down_ms < 0, "and letting go doesn't open the map")
+	city.clock_ms = real_clock
 	paused = false
 
 	# --- back to keyboard
@@ -479,6 +511,23 @@ func run() -> void:
 	else:
 		print("SMOKEDEV TEST FAILED: %d of %d checks" % [failures, checks])
 	quit(1 if failures > 0 else 0)
+
+
+## No touch button (on foot or in a car) covers the minimap or the wanted stars.
+func _clear_of_hud() -> bool:
+	var tc: TouchControls = city.touch
+	var ok := true
+	for id in TouchControls.BUTTONS:
+		if not tc._pos.has(id):
+			continue
+		var p: Vector2 = tc._pos[id]
+		var rad: float = tc._size[id]
+		for rect in city.hud.top_right_rects():
+			var q := Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))
+			if p.distance_to(q) < rad:
+				print("    %s covers the HUD at %s (button at %s)" % [id, rect, p])
+				ok = false
+	return ok
 
 
 ## Every button (on foot and in a car) inside the screen and the safe area, none overlapping

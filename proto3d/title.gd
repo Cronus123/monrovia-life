@@ -34,6 +34,7 @@ var city_shown_s := 0.0
 var account: TitleAccount                 # sign in / create account panel, cloud save offer
 var _account_label: Label
 var _account_button: Button
+var _column: VBoxContainer                 # logo, tagline, menu (see _fit_menu)
 
 
 func _ready() -> void:
@@ -309,7 +310,7 @@ func _build_ui() -> void:
 	col.anchor_top = 0.0
 	col.anchor_bottom = 1.0
 	col.offset_left = (24 if compact else 80) + safe.x
-	col.offset_top = (14 if phone else (30 if compact else 60)) + safe.y
+	col.offset_top = (14 if phone else (30 if compact else 44)) + safe.y
 	col.offset_bottom = -(40 if compact else 70) - safe.w
 	col.offset_right = col.offset_left + 520
 	col.add_theme_constant_override("separation", 3 if phone else 6)
@@ -331,9 +332,10 @@ func _build_ui() -> void:
 	tag.add_theme_font_size_override("font_size", 16)
 	tag.add_theme_color_override("font_color", Color(0.85, 0.88, 0.93))
 	tag.visible = not phone
+	tag.name = "Tagline"
 	col.add_child(tag)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 6 if phone else (12 if compact else 22))
+	gap.custom_minimum_size = Vector2(0, 6 if phone else (12 if compact else 14))
 	col.add_child(gap)
 	_compact = compact
 
@@ -344,7 +346,7 @@ func _build_ui() -> void:
 	col.add_child(_account_label)
 
 	_menu = VBoxContainer.new()
-	_menu.add_theme_constant_override("separation", 6)
+	_menu.add_theme_constant_override("separation", 4 if compact else 5)
 	col.add_child(_menu)
 	if SaveSystem.has_save():
 		_add_button("Continue", _on_continue)
@@ -444,6 +446,26 @@ func _build_ui() -> void:
 	root.add_child(account)
 	Online.get_instance().changed.connect(_update_account)
 	_update_account()
+	_column = col
+	root.resized.connect(_fit_menu)
+	_fit_menu.call_deferred()
+
+
+## The menu must never run under the credit line at the bottom (a short window, or the
+## browser's extra Export / Import save buttons): drop the tagline when it doesn't fit.
+func _fit_menu() -> void:
+	if _column == null:
+		return
+	var tag := _column.get_node_or_null("Tagline") as Control
+	if tag == null:
+		return
+	# the space between the column's offsets (a container never shrinks below its contents)
+	var room := _column.get_parent_control().size.y + _column.offset_bottom - _column.offset_top
+	if tag.visible:
+		if _column.get_combined_minimum_size().y > room:
+			tag.visible = false
+	elif not DeviceProfile.is_phone() and _column.get_combined_minimum_size().y + tag.get_combined_minimum_size().y + 6.0 <= room:
+		tag.visible = true                       # the window grew back
 
 
 func _add_button(label: String, cb: Callable) -> void:
@@ -464,6 +486,8 @@ func _styled_button(label: String) -> Button:
 	normal.bg_color = Color(0, 0, 0, 0.35)
 	normal.set_content_margin_all(10)
 	normal.content_margin_left = 18
+	normal.content_margin_top = 6 if _compact else 7
+	normal.content_margin_bottom = 6 if _compact else 7
 	var hot := normal.duplicate() as StyleBoxFlat
 	hot.bg_color = Color(YELLOW, 0.92)
 	hot.border_width_left = 6

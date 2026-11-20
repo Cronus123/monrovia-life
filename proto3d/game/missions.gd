@@ -131,7 +131,7 @@ func _paint(car, col: Color) -> void:
 func objective() -> String:
 	if not active():
 		return ("Auntie Musu has a job for you at Waterside (yellow M)." if available() else "")
-	var text := String(step()["text"])
+	var text := InputGlyphs.fill(String(step()["text"]))     # {action}: that device's key / button
 	if float(current["timer"]) >= 0.0:
 		text += "  %d s left" % int(maxf(0.0, current["timer"]))
 	return text

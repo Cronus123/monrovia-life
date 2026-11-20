@@ -906,7 +906,7 @@ func _complete() -> void:
 	if reward > 0:
 		state.say("+%s  %s" % [GameState.money_text(reward), String(j["title"])], Color("#f5c518"), 5.0)
 	if j.has("done_say"):
-		state.say(String(j["done_say"]), Color("#8ff0ea"), 6.0)
+		state.say(InputGlyphs.fill(String(j["done_say"])), Color("#8ff0ea"), 6.0)
 	job_passed.emit(id)
 	if choice != "":
 		refresh()

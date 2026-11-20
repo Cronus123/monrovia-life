@@ -33,7 +33,12 @@ func setup(main_node) -> void:
 	_widget.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_widget.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_widget.draw.connect(_draw_widget)
-	add_child(_widget)
+	# the weapon box goes under the HUD's panels and menus (this node, the wheel overlay,
+	# stays on top): it stops redrawing while the game is paused, and on touch screens it
+	# sits where the pause menu opens, so it used to show through the menu
+	_widget.name = "WeaponBox"
+	main.hud.add_child(_widget)
+	main.hud.move_child(_widget, 0)
 	visible = true
 
 
@@ -149,6 +154,11 @@ func _draw_widget() -> void:
 		# the bottom right belongs to the touch buttons: sit under the status panel instead
 		var m: Vector4 = main.safe_margins if main.get("safe_margins") != null else Vector4.ZERO
 		box.position = Vector2(12.0 + m.x, 190.0 + m.y)
+		var tc = main.get("touch")
+		if DeviceProfile.kind == DeviceProfile.TABLET and tc != null and tc._pos.has("perk"):
+			# tablets put Reload / Crouch / Roll above the joystick, right where the box would
+			# be: beside the small Pause / Map / View / Perk buttons instead
+			box.position = Vector2(float(tc._pos["perk"].x) + float(tc._size["perk"]) + 14.0, float(tc._pos["pause"].y) - float(tc._size["pause"]))
 	_widget.draw_rect(box, NAVY)
 	var tex: Texture2D = _icons.get(String(d["id"]))
 	if tex != null:

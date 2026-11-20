@@ -147,7 +147,7 @@ def export_roads():
     half = [(X1 - X0) / 2, (Y1 - Y0) / 2]
     path = os.path.join(ROOT, "proto3d", "data", "roads.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump({"tile": T, "half_extent": half, "roads": out}, f, indent=1)
     print("wrote", path, len(out), "roads")
 

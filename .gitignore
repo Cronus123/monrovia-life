@@ -3,8 +3,10 @@
 *.tmp
 *.translation
 
-# Exported builds
-build/
+# Exported builds (build/.gdignore is kept: it stops Godot importing an exported build -
+# its index.pck, tiles and HTML - back into the project)
+build/*
+!build/.gdignore
 
 # Export credentials (keystores, passwords) - never commit
 export_credentials.cfg

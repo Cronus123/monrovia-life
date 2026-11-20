@@ -93,7 +93,7 @@
    "title": "Hot Pepper FM", "reward": 900,
    "intro": "I recorded my programme. Carry this tape to Hot Pepper FM on Crown Hill before the 6 o'clock news. The people are waiting for my wisdom.",
    "steps": [{"type": "goto", "target": "crown_hill", "timer": 180, "text": "Get Big Talk's tape to Hot Pepper FM on Crown Hill."}],
-   "done_say": "From today, tune in to the Big Talk Hour on your car radio (R)."
+   "done_say": "From today, tune in to the Big Talk Hour on your car radio {p3_radio}."
   },
   "rival_crew": {
    "title": "Poster War", "reward": 1500, "cross_on_fail": true,

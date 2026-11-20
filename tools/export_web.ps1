@@ -73,28 +73,50 @@ Write-Host "== hosting files (GitHub Pages and Apache/IONOS)" -ForegroundColor C
 # GitHub Pages: serve play.libgamer.com, and don't run the folder through Jekyll
 Set-Content -Path (Join-Path $out "CNAME") -Value "play.libgamer.com" -NoNewline -Encoding ascii
 Set-Content -Path (Join-Path $out ".nojekyll") -Value "" -NoNewline -Encoding ascii
-# Apache (IONOS and most shared hosts): wasm type, compression, caching
+# Apache (IONOS and most shared hosts): types, compression, caching. Two files: the root one
+# for the page, engine and game (always revalidated), and city/.htaccess for the tiles and
+# their metadata (city/hi, city/lo: .glb; city/meta: .json), which compress well and are
+# cached for a week. The service worker revalidates tiles when TILES changes, so a week's
+# browser cache never hands it old tiles after a rebuild.
 @'
 # Monrovia Life: Streets - browser build (written by tools/export_web.ps1)
 AddType application/wasm .wasm
 AddType application/octet-stream .pck
 AddType model/gltf-binary .glb
+AddType application/json .json
+AddType text/javascript .js
 
 <IfModule mod_deflate.c>
   AddOutputFilterByType DEFLATE text/html text/javascript application/javascript application/wasm application/octet-stream model/gltf-binary application/json
 </IfModule>
 
 <IfModule mod_headers.c>
-  # the page, engine and game change with each update: always check for a new version
-  <FilesMatch "\.(html|js|wasm|pck)$">
+  # the page, engine, game and service worker change with each update: always revalidate
+  <FilesMatch "\.(html|js|wasm|pck|json)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
-  # city tiles and their metadata rarely change: let browsers keep them for a week
+</IfModule>
+'@ | Set-Content -Path (Join-Path $out ".htaccess") -Encoding ascii
+@'
+# Monrovia Life: Streets - city tiles (written by tools/export_web.ps1)
+# hi/ and lo/: tile meshes (.glb), meta/: each detailed tile's paths, props, trees, signs (.json)
+AddType model/gltf-binary .glb
+AddType application/json .json
+
+<IfModule mod_deflate.c>
+  # tile meshes and metadata compress well
+  AddOutputFilterByType DEFLATE model/gltf-binary application/json
+</IfModule>
+
+<IfModule mod_headers.c>
+  # tiles only change when the city is rebuilt: let browsers keep them for a week
   <FilesMatch "\.(glb|json)$">
     Header set Cache-Control "public, max-age=604800"
   </FilesMatch>
 </IfModule>
-'@ | Set-Content -Path (Join-Path $out ".htaccess") -Encoding ascii
+'@ | Set-Content -Path (Join-Path $out "city\.htaccess") -Encoding ascii
+$gdi = Join-Path $project "build\.gdignore"           # Godot: never import an exported build
+if (-not (Test-Path $gdi)) { New-Item -ItemType File $gdi | Out-Null }
 
 $big = Get-ChildItem $out -Recurse -File | Where-Object { $_.Length -ge 100MB }
 if ($big) { Write-Host "files over 100 MB (GitHub's limit): $($big.Name -join ', ')" -ForegroundColor Red; exit 1 }

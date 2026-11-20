@@ -670,6 +670,250 @@ def _on_road(ring, road_mask, city, RM):
     return inside > 0 and (hit >= 6 or hit > inside * 0.2)
 
 
+class RoadClearance:
+    """The tarmac as the tiles draw it (carriageway strips and junction pads), for keeping
+    buildings and street signs off it. OSM footprints often reach a metre or more into the
+    road (the road width here is a guess from its class), which left walls standing in the
+    carriageway; tools/audit_city.py measures this on the finished tiles."""
+    BIN = 16.0
+
+    def __init__(self):
+        self.segs = defaultdict(list)     # bin -> [(ax, ay, bx, by, half width)]
+        self.pads = defaultdict(list)     # bin -> [(x, y, radius)]
+
+    def _bins(self, x0, y0, x1, y1):
+        for i in range(int(math.floor(x0 / self.BIN)), int(math.floor(x1 / self.BIN)) + 1):
+            for j in range(int(math.floor(y0 / self.BIN)), int(math.floor(y1 / self.BIN)) + 1):
+                yield (i, j)
+
+    def add_road(self, pts, half):
+        for a, b in zip(pts, pts[1:]):
+            s = (a[0], a[1], b[0], b[1], half)
+            for k in self._bins(min(a[0], b[0]) - half, min(a[1], b[1]) - half, max(a[0], b[0]) + half, max(a[1], b[1]) + half):
+                self.segs[k].append(s)
+
+    def add_pad(self, x, y, r):
+        for k in self._bins(x - r, y - r, x + r, y + r):
+            self.pads[k].append((x, y, r))
+
+    def near(self, x0, y0, x1, y1, pad=6.0):
+        segs, pads = set(), set()
+        for k in self._bins(x0 - pad, y0 - pad, x1 + pad, y1 + pad):
+            segs.update(self.segs.get(k, ()))
+            pads.update(self.pads.get(k, ()))
+        return list(segs), list(pads)
+
+    @staticmethod
+    def depth(xs, ys, segs, pads):
+        """How far each point is inside the tarmac (> 0: on it), vectorised."""
+        d = np.full(np.shape(xs), -1e9)
+        for ax, ay, bx, by, h in segs:
+            dx, dy = bx - ax, by - ay
+            L2 = dx * dx + dy * dy or 1e-9
+            t = np.clip(((xs - ax) * dx + (ys - ay) * dy) / L2, 0.0, 1.0)
+            d = np.maximum(d, h - np.hypot(xs - (ax + t * dx), ys - (ay + t * dy)))
+        for px, py, r in pads:
+            d = np.maximum(d, r - np.hypot(xs - px, ys - py))
+        return d
+
+    def push_out(self, x, y, segs, pads, clear):
+        """Move a point straight away from any road strip / pad it is within `clear` of."""
+        for _ in range(6):
+            moved = False
+            for ax, ay, bx, by, h in segs:
+                dx, dy = bx - ax, by - ay
+                L2 = dx * dx + dy * dy or 1e-9
+                t = min(1.0, max(0.0, ((x - ax) * dx + (y - ay) * dy) / L2))
+                px, py = ax + t * dx, ay + t * dy
+                d = math.hypot(x - px, y - py)
+                if d < h + clear - 1e-6:
+                    if d < 1e-6:
+                        return None
+                    x, y = px + (x - px) / d * (h + clear), py + (y - py) / d * (h + clear)
+                    moved = True
+            for px, py, r in pads:
+                d = math.hypot(x - px, y - py)
+                if d < r + clear - 1e-6:
+                    if d < 1e-6:
+                        return None
+                    x, y = px + (x - px) / d * (r + clear), py + (y - py) / d * (r + clear)
+                    moved = True
+            if not moved:
+                return (x, y)
+        return None
+
+
+def _self_intersects(ring):
+    n = len(ring)
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    for i in range(n):
+        a, b = ring[i], ring[(i + 1) % n]
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue
+            c, d = ring[j], ring[(j + 1) % n]
+            if (cross(a, b, c) > 0) != (cross(a, b, d) > 0) and (cross(c, d, a) > 0) != (cross(c, d, b) > 0):
+                return True
+    return False
+
+
+def _ring_overlap(ring, segs, pads, step=0.25):
+    """Area (m2) of the footprint on tarmac, sampled like tools/audit_city.py."""
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    gx = np.arange(min(xs) + step / 2, max(xs), step)
+    gy = np.arange(min(ys) + step / 2, max(ys), step)
+    if len(gx) == 0 or len(gy) == 0:
+        return 0.0, 0.0
+    X, Y = np.meshgrid(gx, gy)
+    ins = np.zeros(X.shape, bool)
+    for i in range(len(ring)):
+        (ax, ay), (bx, by) = ring[i], ring[i - 1]
+        if ay == by:
+            continue
+        ins ^= ((ay > Y) != (by > Y)) & (X < (bx - ax) * (Y - ay) / (by - ay) + ax)
+    if not ins.any():
+        return 0.0, 0.0
+    on = RoadClearance.depth(X[ins], Y[ins], segs, pads) > 0
+    return float(on.sum()) * step * step, float(ins.sum()) * step * step
+
+
+def clear_building_of_roads(ring, rc, clear=0.35):
+    """Returns (ring, status): the footprint unchanged ("ok"), with its corners pushed off
+    the tarmac ("moved"), or None ("dropped") when that can't be done without wrecking it."""
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    segs, pads = rc.near(min(xs), min(ys), max(xs), max(ys))
+    if not segs and not pads:
+        return ring, "ok"
+    over, area = _ring_overlap(ring, segs, pads)
+    if over == 0.0:
+        return ring, "ok"
+    if over > area * 0.4:
+        return None, "dropped"
+    for attempt in (0, 1):
+        src = ring
+        if attempt == 1:          # still clipping a pad or a bend: add corners along long walls
+            src = []
+            for i in range(len(ring)):
+                a, b = ring[i], ring[(i + 1) % len(ring)]
+                n = max(1, int(math.ceil(math.hypot(b[0] - a[0], b[1] - a[1]) / 1.5)))
+                src += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(n)]
+        new = []
+        for x, y in src:
+            q = rc.push_out(x, y, segs, pads, clear)
+            if q is None:
+                return None, "dropped"
+            if not new or math.hypot(q[0] - new[-1][0], q[1] - new[-1][1]) > 0.05:
+                new.append(q)
+        if len(new) > 2 and math.hypot(new[0][0] - new[-1][0], new[0][1] - new[-1][1]) <= 0.05:
+            new.pop()
+        if attempt == 1:          # drop the extra corners that stayed in a straight line
+            k = 0
+            while len(new) > 3 and k < len(new):
+                a, b, c = new[k - 1], new[k], new[(k + 1) % len(new)]
+                cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+                if abs(cr) < 0.02 * max(1e-6, math.hypot(c[0] - a[0], c[1] - a[1])):
+                    new.pop(k)
+                else:
+                    k += 1
+        if len(new) < 3:
+            return None, "dropped"
+        a2 = polygon_area(new)
+        if a2 < area * 0.6 or _self_intersects(new):
+            return None, "dropped"
+        if _ring_overlap(new, segs, pads)[0] == 0.0:
+            return new, "moved"
+    return None, "dropped"
+
+
+SIGN_ANGLES = [45, 135, 225, 315] + [a for a in range(0, 360, 15) if a % 90 != 45]
+
+
+def settle_props(hi, meta, clearance, in_building):
+    """Last pass, once every mesh is built: put each street prop, lamp post, sign post,
+    plant and grass spot on the surface actually under it (the highest terrain, road or
+    sidewalk triangle there), and move each street-name sign from the junction centre to a
+    free corner. Before this, props were placed at their own road's height and could end
+    up inside a neighbouring road's sidewalk or float over a dip; signs sat 5 m off the
+    junction centre wherever that was, often half buried in the road or in a building.
+    tools/audit_city.py checks the result with the same surface test."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from audit_city import Surface
+    surf = Surface()
+    for tk, nodes in hi.items():
+        for node in ("Terrain-col", "Roads-col", "Sidewalks-col"):
+            for mat, (pos, _col, idx) in nodes[node].parts.items():
+                if mat == "Rail" or not idx:
+                    continue
+                surf.add(np.asarray(pos, np.float32)[np.asarray(idx, np.int64).reshape(-1, 3)], 0.02 if node == "Terrain-col" else 0.5)
+
+    def ground(x, z, y):
+        hs = [h for h in surf.heights(x, z) if h < y + 2.0]
+        return max(hs) if hs else None
+
+    moved = defaultdict(int)
+    dropped = defaultdict(int)
+    for tk, mt in meta.items():
+        n = len(mt["trees"])
+        mt["trees"] = [q for q in mt["trees"] if not in_building(q[0], q[2])]
+        dropped["plants in buildings"] += n - len(mt["trees"])
+        old_poles = [(q[0], q[2], q[1]) for q in mt["poles"]]
+        for key, lift in (("props", 0.02), ("poles", 0.0), ("trees", 0.0), ("grass", 0.0), ("parking", 0.5)):
+            for q in mt[key]:
+                g = ground(q[0], q[2], q[1])
+                if g is None:
+                    continue
+                y = round(g + lift, 2)
+                if abs(y - q[1]) > 0.01:
+                    moved[key] += 1
+                q[1] = y
+        # street lights hang off their posts: follow the post up or down, drop orphans
+        lamps = []
+        for lp in mt["lamps"]:
+            best = None
+            for (px, pz, py0), q in zip(old_poles, mt["poles"]):
+                d = math.hypot(lp[0] - px, lp[2] - pz)
+                if d < 2.0 and (best is None or d < best[0]):
+                    best = (d, q[1] - py0)
+            if best is None:
+                dropped["lights without a post"] += 1
+                continue
+            lamps.append([lp[0], round(lp[1] + best[1], 2), lp[2]])
+        mt["lamps"] = lamps
+        # street-name signs: a corner off the tarmac, out of buildings, on the ground
+        signs = []
+        for s in mt["signs"]:
+            cx, cz, w = s[0], s[2], s[4] if len(s) > 4 else 6.0
+            segs, pads = clearance.near(cx - 12, -cz - 12, cx + 12, -cz + 12)
+            spot = None
+            for r in (w / 2 + 1.6, w / 2 + 2.4, w / 2 + 3.4, w / 2 + 4.6):
+                for deg in SIGN_ANGLES:                    # diagonals (street corners) first
+                    a = math.radians(deg)
+                    x, z = cx + r * math.cos(a), cz + r * math.sin(a)
+                    if RoadClearance.depth(np.array([x]), np.array([-z]), segs, pads)[0] > -0.4:
+                        continue
+                    if in_building(x, z):
+                        continue
+                    g = ground(x, z, s[1] + 1.0)
+                    if g is None:
+                        continue
+                    spot = [round(x, 2), round(g, 2), round(z, 2), s[3]]
+                    break
+                if spot:
+                    break
+            if spot:
+                signs.append(spot)
+                moved["signs"] += 1
+            else:
+                dropped["signs with no free corner"] += 1
+        mt["signs"] = signs
+    print("settled on the built surface:", ", ".join("%s %d" % kv for kv in sorted(moved.items())))
+    if dropped:
+        print("dropped:", ", ".join("%s %d" % kv for kv in sorted(dropped.items())))
+
+
 def tile_of(x, y):
     return int(math.floor(x / TILE)), int(math.floor(y / TILE))
 
@@ -729,6 +973,7 @@ def main():
     graded = grade_terrain_for_roads(city, road_lines)
     print("terrain graded to road level at %d cells" % graded)
 
+    clearance = RoadClearance()
     for el, g, w in road_lines:
         t = el["tags"]
         kind = t["highway"]
@@ -750,6 +995,7 @@ def main():
                 ramp = min(1.0, min(L[i], total - L[i]) / 30.0)
                 hs[i] = max(hs[i], hs[i] + (deck - hs[i]) * ramp)
         ys = [hv + 0.12 + rank * 0.006 for hv in hs]
+        clearance.add_road(pts, w / 2)
         if kind not in ("pedestrian", "track", "service"):
             ow = t.get("oneway", "no")
             graph_ways.append((kind, t.get("name", ""), 1 if ow in ("yes", "1", "true") else (-1 if ow == "-1" else 0), w, g, pts, ys))
@@ -886,6 +1132,7 @@ def main():
         if not city.inside(x, y) or city.is_water(x, y):
             continue
         r = junction_w[key] / 2 + 1.2
+        clearance.add_pad(x, y, r)
         hv = city.hm(x, y) + 0.115
         tk = tile_of(x, y)
         ring = [(x + r * math.cos(a * math.tau / 16), y + r * math.sin(a * math.tau / 16)) for a in range(16)]
@@ -905,7 +1152,9 @@ def main():
                 x, y = city.local(p["lat"], p["lon"])
                 tk = tile_of(x, y)
                 if not any(abs(s[0] - x) < 12 and abs(s[2] + y) < 12 for s in meta[tk]["signs"]):
-                    meta[tk]["signs"].append([round(x, 2), round(city.hm(x, y), 2), round(-y, 2), sorted(names)[:2]])
+                    # junction centre for now; the post is moved to a free corner by settle_props()
+                    meta[tk]["signs"].append([round(x, 2), round(city.hm(x, y), 2), round(-y, 2), sorted(names)[:2],
+                                              junction_w.get((round(p["lat"], 7), round(p["lon"], 7)), 6.0)])
     print("roads, sidewalks, props done %.0f s" % (time.time() - t_start))
 
     # ---------------- buildings
@@ -913,6 +1162,7 @@ def main():
     landmarks = []
     downtown = lambda x, y: DOWNTOWN[0] < x < DOWNTOWN[1] and DOWNTOWN[2] < y < DOWNTOWN[3]
     skipped_on_road = 0
+    moved_clip = dropped_clip = 0
     for el in city.osm:
         t = el.get("tags", {})
         name = t.get("name", "")
@@ -955,6 +1205,16 @@ def main():
         if _on_road(ring, road_mask, city, RM):
             skipped_on_road += 1
             continue
+        ring, status = clear_building_of_roads(ring, clearance)
+        if ring is None:
+            skipped_on_road += 1
+            dropped_clip += 1
+            continue
+        if status == "moved":
+            moved_clip += 1
+            area = polygon_area(ring)
+            cx = sum(p[0] for p in ring) / len(ring)
+            cy = sum(p[1] for p in ring) / len(ring)
         try:
             levels = float(str(t.get("building:levels", "")).split(";")[0])
         except ValueError:
@@ -1001,7 +1261,8 @@ def main():
             _pitched_roof(m, ring, top, roof, el["id"])
         _wall_details(m, props, meta[tk], ring, base, top, levels, wall, el["id"], downtown(cx, cy) or t.get("building") in ("commercial", "retail"), city, road_mask, RM)
         count += 1
-    print("buildings:", count, "(%d skipped: footprint on a carriageway)" % skipped_on_road, "(%.0f s)" % (time.time() - t_start))
+    print("buildings:", count, "(%d skipped: footprint on a carriageway, %d of them clipping one;" % (skipped_on_road, dropped_clip),
+          "%d pulled back off the road)" % moved_clip, "(%.0f s)" % (time.time() - t_start))
 
     # ---------------- vegetation: palms, trees and bushes on green land, grass tuft spots
     bmask = np.zeros_like(road_mask)
@@ -1105,13 +1366,17 @@ def main():
                         cols.append(city.cover_color(x, y))
                 target[(i, j)][name].grid(mat, verts, cols, nv, nv)
 
+    # ---------------- props, plants and signs onto the surface just built
+    settle_props(hi, meta, clearance, in_building)
+    print("settled (%.0f s)" % (time.time() - t_start))
+
     # ---------------- write
     for sub in ("hi", "lo", "meta"):
         os.makedirs(os.path.join(OUT, sub), exist_ok=True)
         for f in os.listdir(os.path.join(OUT, sub)):
             os.remove(os.path.join(OUT, sub, f))
     write_glb(os.path.join(OUT, "vegetation.glb"), veg)
-    with open(os.path.join(OUT, "vegetation.glb.import"), "w") as f:
+    with open(os.path.join(OUT, "vegetation.glb.import"), "w", encoding="utf-8", newline="\n") as f:
         f.write('[remap]\n\nimporter="keep"\n')
     manifest_tiles = []
     total = 0
@@ -1119,13 +1384,13 @@ def main():
         tag = "t_%d_%d" % (i, j)
         ok_hi = write_glb(os.path.join(OUT, "hi", tag + ".glb"), [(k, m) for k, m in hi[(i, j)].items() if not m.empty()])
         ok_lo = write_glb(os.path.join(OUT, "lo", tag + ".glb"), [(k, m) for k, m in lo[(i, j)].items() if not m.empty()])
-        with open(os.path.join(OUT, "meta", tag + ".json"), "w") as f:
+        with open(os.path.join(OUT, "meta", tag + ".json"), "w", encoding="utf-8", newline="\n") as f:
             json.dump(meta[(i, j)], f, separators=(",", ":"))
         # Tiles are loaded at runtime by the world streamer (GLTFDocument), so Godot keeps
         # them as raw files in exports instead of importing ~1,700 scenes.
         for sub, ok in (("hi", ok_hi), ("lo", ok_lo)):
             if ok:
-                with open(os.path.join(OUT, sub, tag + ".glb.import"), "w") as f:
+                with open(os.path.join(OUT, sub, tag + ".glb.import"), "w", encoding="utf-8", newline="\n") as f:
                     f.write('[remap]\n\nimporter="keep"\n')
         if ok_hi or ok_lo:
             manifest_tiles.append([i, j])
@@ -1155,10 +1420,10 @@ def main():
         "tiles": manifest_tiles, "landmarks": landmarks, "places": places,
         "credits": "Map data (c) OpenStreetMap contributors, ODbL. Elevation: Terrain Tiles (AWS Open Data), SRTM.",
     }
-    with open(os.path.join(OUT, "manifest.json"), "w") as f:
+    with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(manifest, f, indent=1)
     nodes, edges = build_graph(graph_ways)
-    with open(os.path.join(OUT, "roads_graph.json"), "w") as f:
+    with open(os.path.join(OUT, "roads_graph.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump({"nodes": nodes, "edges": edges}, f, separators=(",", ":"))
     print("road graph: %d junctions, %d road edges" % (len(nodes), len(edges)))
     write_places(city, meta, landmarks, edges)
@@ -1246,7 +1511,7 @@ def write_places(city, meta, landmarks, edges):
     for e in src["district"]:
         x, y = city.local(e["lat"], e["lon"])
         res["district"].append({"name": e["name"], "pos": [round(x, 1), 0, round(-y, 1)]})
-    with open(os.path.join(OUT, "places.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(OUT, "places.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(res, f, indent=1)
     print("places: %d points of interest, %d destinations" % (len(res["poi"]), len(res["dest"])))
 
@@ -1273,7 +1538,7 @@ def write_minimap(city, road_mask, rings):
     img[: rm.shape[0], : rm.shape[1]][rm] = (238, 238, 232)
     write_png(os.path.join(OUT, "minimap.png"), img[::-1].copy())
     info = {"x0": city.xmin, "z0": -city.ymax, "m_per_px": MPP, "w": w, "h": h}
-    with open(os.path.join(OUT, "minimap.json"), "w") as f:
+    with open(os.path.join(OUT, "minimap.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(info, f)
     print("minimap: %d x %d px" % (w, h))
 

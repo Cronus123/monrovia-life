@@ -451,7 +451,7 @@ func _add_signs(tile: Node3D, meta: Dictionary) -> void:
 	for s in meta.get("signs", []):
 		# a break-away post: stands until a car knocks it over
 		var post: RigidBody3D = PropsScript._body(true, 30.0)
-		post.position = Vector3(s[0] + 5.0, s[1], s[2] + 5.0)
+		post.position = Vector3(s[0], s[1], s[2])      # a free street corner (build_osm_city.py)
 		PropsScript._shape(post, Vector3(0.12, 3.2, 0.12), Vector3(0, 1.6, 0))
 		tile.add_child(post)
 		var pole := MeshInstance3D.new()

@@ -90,7 +90,7 @@ def main():
         for y in range(tile_y(N, z), tile_y(S, z) + 1):
             fetch(f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
                   os.path.join(DEM_DIR, f"terrarium_{z}_{x}_{y}.png"))
-    with open(os.path.join(ROOT, "data", "bbox.json"), "w") as f:
+    with open(os.path.join(ROOT, "data", "bbox.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump({"south": S, "west": W, "north": N, "east": E, "dem_zoom": z}, f, indent=1)
     print("done")
 

@@ -32,7 +32,9 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(caches.open(TILES).then(async (c) => {
       const hit = await c.match(req, { ignoreSearch: true });
       if (hit) return hit;
-      const res = await fetch(req);
+      // revalidate with the server (a cheap 304 if unchanged): the host lets browsers
+      // keep tiles for a week, and right after a rebuild that copy may be the old tile
+      const res = await fetch(new Request(req, { cache: 'no-cache' }));
       if (res.ok) c.put(req, res.clone());
       return res;
     }));

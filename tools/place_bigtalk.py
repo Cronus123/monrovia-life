@@ -146,7 +146,7 @@ def main():
            "posters": [poster(s) for s in picked], "city_posters": [poster(s) for s in city],
            "billboard": billboard, "statue": statue, "rally": rally, "crew": poster(crew), "house": house}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(out, open(OUT, "w", encoding="utf-8"), indent=1)
+    json.dump(out, open(OUT, "w", encoding="utf-8", newline="\n"), indent=1)
     print("house plot: %s, off %s, at %s" % (anchor, street, house["pos"]))
     print("billboard", billboard, "rally", rally)
     print("wrote", OUT)

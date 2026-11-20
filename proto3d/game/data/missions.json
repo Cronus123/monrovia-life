@@ -6,7 +6,7 @@
    "id": "wheels", "title": "Wheels for the Crew", "reward": 1500,
    "intro": "Welcome back to Monrovia, Kollie. My crew needs wheels. Take any car and bring it to our garage at Slipway.",
    "steps": [
-    {"type": "deliver_any_car", "target": "garage", "text": "Take any car (F) and bring it to the crew garage at Slipway."}
+    {"type": "deliver_any_car", "target": "garage", "text": "Take any car {p3_interact} and bring it to the crew garage at Slipway."}
    ]
   },
   {

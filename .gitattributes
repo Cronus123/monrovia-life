@@ -12,6 +12,17 @@
 *.py text eol=lf
 *.json text eol=lf
 *.ps1 text eol=crlf
+*.html text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+
+# Files the tools regenerate on Windows (data/bbox.json by tools/fetch_map_data.py, the
+# *.import files by Godot and tools/build_osm_city.py): LF in the repo and in the working
+# tree whatever core.autocrlf says, and the tools write LF, so a rebuild doesn't show up as
+# line-ending-only changes.
+data/bbox.json text eol=lf
+*.import text eol=lf
+*.gdignore text eol=lf
 
 # Binary assets
 *.png binary
@@ -26,3 +37,5 @@
 *.otf binary
 *.exe binary
 *.pck binary
+*.glb binary
+*.wasm binary

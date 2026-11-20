@@ -8,11 +8,18 @@
 #>
 param(
     [int]$Port = 8070,
-    [string]$Python = "C:\Program Files\Blender Foundation\Blender 5.3\5.3\python\bin\python.exe",
+    [string]$Python = "",
     [int]$TimeoutSec = 300
 )
 $ErrorActionPreference = "Stop"
 $project = Split-Path -Parent $PSScriptRoot
+if (-not $Python) {
+    # the newest Blender's bundled Python (any 5.x works: serve_web.py needs only the standard library)
+    $Python = Get-ChildItem "$env:ProgramFiles\Blender Foundation\Blender *\*\python\bin\python.exe" -ErrorAction SilentlyContinue |
+        Sort-Object { [version]($_.Directory.Parent.Parent.Name -replace '[^0-9.]', '') } -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $Python -or -not (Test-Path $Python)) { Write-Host "Python not found (-Python <python.exe>)" -ForegroundColor Red; exit 2 }
 $work = Join-Path $project "build\bench"
 New-Item -ItemType Directory -Force $work | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
