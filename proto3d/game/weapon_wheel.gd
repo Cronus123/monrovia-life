@@ -143,11 +143,9 @@ func _draw() -> void:
 	draw_string(font2, c + Vector2(-60, 6), String(sel["name"]).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 120, 15, GOLD)
 
 
-func _draw_widget() -> void:
-	if main == null or main.hud.menu_open or main.hud.map_open:
-		return
-	var w: int = state.weapon
-	var d: Dictionary = weapons.defs[w]
+## Where the weapon box goes (canvas units): bottom right, or with touch controls under the
+## status panel (phones) or beside the small top buttons (tablets).
+func box_rect() -> Rect2:
 	var vs := get_viewport_rect().size
 	var box := Rect2(vs.x - 250, vs.y - 128, 230, 92)
 	if InputMode.is_touch():
@@ -159,6 +157,15 @@ func _draw_widget() -> void:
 			# tablets put Reload / Crouch / Roll above the joystick, right where the box would
 			# be: beside the small Pause / Map / View / Perk buttons instead
 			box.position = Vector2(float(tc._pos["perk"].x) + float(tc._size["perk"]) + 14.0, float(tc._pos["pause"].y) - float(tc._size["pause"]))
+	return box
+
+
+func _draw_widget() -> void:
+	if main == null or main.hud.menu_open or main.hud.map_open:
+		return
+	var w: int = state.weapon
+	var d: Dictionary = weapons.defs[w]
+	var box := box_rect()
 	_widget.draw_rect(box, NAVY)
 	var tex: Texture2D = _icons.get(String(d["id"]))
 	if tex != null:

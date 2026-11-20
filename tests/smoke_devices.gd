@@ -367,6 +367,29 @@ func run() -> void:
 	for id in ["fire", "jump", "aim", "car", "use", "weapon"]:
 		reach = reach and city.touch._pos[id].distance_to(corner_r) < vs.y * 0.62
 	check(reach, "tablet: right-thumb buttons stay near the corner")
+	# common tablets in landscape, at the tablet UI scale: every button at least MIN_GAP from
+	# every other one shown with it, from the joystick's resting circle, from the screen /
+	# safe-area edge, from the minimap and wanted stars and from the weapon box
+	var tab_win: Window = root
+	var tab_old := tab_win.size
+	var tab_m := Vector4(8, 8, 8, 20)
+	for sz in [Vector2i(1024, 768), Vector2i(1180, 820), Vector2i(1366, 1024)]:
+		tab_win.size = sz
+		tab_win.content_scale_factor = DeviceProfile.UI_SCALE[DeviceProfile.TABLET]
+		await frames(4)
+		DeviceProfile.kind = DeviceProfile.TABLET
+		city.touch.layout_kind = DeviceProfile.TABLET
+		city.touch.margins = tab_m
+		city.hud.apply_safe_area(tab_m)
+		city.hud.set_compact(false)
+		city.touch.relayout()
+		await frames(2)
+		check(_spacing_ok(tab_m, TouchControls.MIN_GAP), "tablet %dx%d: buttons %.0f+ apart, clear of the joystick, edges, minimap, stars and weapon box (canvas %s)" % [sz.x, sz.y, TouchControls.MIN_GAP, city.touch.size])
+	tab_win.content_scale_factor = 1.0
+	tab_win.size = tab_old
+	await frames(2)
+	city.touch.margins = Vector4(8, 8, 8, 20)
+	city.touch.relayout()
 	city.hud.apply_safe_area(Vector4(44, 10, 44, 21))
 	check(is_equal_approx(city.hud._root.offset_left, 44.0) and is_equal_approx(city.hud._root.offset_bottom, -21.0), "the HUD keeps inside the safe area")
 	city.hud.apply_safe_area(Vector4.ZERO)
@@ -511,6 +534,45 @@ func run() -> void:
 	else:
 		print("SMOKEDEV TEST FAILED: %d of %d checks" % [failures, checks])
 	quit(1 if failures > 0 else 0)
+
+
+## Minimum spacing for every button shown at the same time (on foot, in a car): `gap` from
+## each other, from the joystick's resting circle, inside the safe area by `gap`, and `gap`
+## clear of the minimap, the wanted stars and the weapon box.
+func _spacing_ok(m: Vector4, gap: float) -> bool:
+	var tc: TouchControls = city.touch
+	var s := tc.size
+	var ok := true
+	var rects: Array = city.hud.top_right_rects()
+	rects.append(city.wheel.box_rect())
+	for where in [TouchControls.FOOT, TouchControls.CAR]:
+		var ids: Array = []
+		for id in TouchControls.BUTTONS:
+			if int(TouchControls.BUTTONS[id][3]) & where:
+				ids.append(id)
+		for i in ids.size():
+			var a: String = ids[i]
+			var pa: Vector2 = tc._pos[a]
+			var ra: float = tc._size[a]
+			if pa.x - ra < m.x or pa.y - ra < m.y or pa.x + ra > s.x - m.z or pa.y + ra > s.y - m.w:
+				print("    %s outside the safe area at %s" % [a, pa])
+				ok = false
+			var to_stick := pa.distance_to(tc._stick_rest) - ra - tc.radius * 2.0
+			if to_stick < gap - 0.01:
+				print("    %s %.0f from the joystick" % [a, to_stick])
+				ok = false
+			for rect in rects:
+				var q := Vector2(clampf(pa.x, rect.position.x, rect.end.x), clampf(pa.y, rect.position.y, rect.end.y))
+				if pa.distance_to(q) - ra < gap - 0.01:
+					print("    %s %.0f from the HUD box %s" % [a, pa.distance_to(q) - ra, rect])
+					ok = false
+			for j in range(i + 1, ids.size()):
+				var b: String = ids[j]
+				var d := pa.distance_to(tc._pos[b]) - ra - float(tc._size[b])
+				if d < gap - 0.01:
+					print("    %s and %s only %.0f apart" % [a, b, d])
+					ok = false
+	return ok
 
 
 ## No touch button (on foot or in a car) covers the minimap or the wanted stars.

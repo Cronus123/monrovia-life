@@ -36,6 +36,7 @@ const TOP := ["pause", "map", "camera", "perk"]
 const MOVE := ["p3_forward", "p3_back", "p3_left", "p3_right"]
 const LOOK_SENS := 0.0062
 const RUN_AT := 0.92                    # joystick deflection that starts running
+const MIN_GAP := 10.0                   # smallest gap between buttons / the joystick (tests check it)
 
 var main                                # main_city.gd
 var layout_kind := DeviceProfile.DESKTOP   # "tablet" uses both thumb corners
@@ -116,14 +117,21 @@ func relayout() -> void:
 	var cl := Vector2(margins.x + r + 4.0, s.y - margins.w - r - 4.0)
 	_stick_rest = cl + Vector2(1.7, -1.7) * r
 	if tablet:
-		# big screen: the left thumb takes the secondary moves, above the joystick
-		_arc(cl, 5.6 * r, ["reload", "crouch", "dodge"], 270.0, 360.0)
+		# big screen: the left thumb takes the secondary moves, in an arc around the
+		# joystick's resting circle (up-left, up-right, right) at the same clear gap from it,
+		# so none crowds the stick (Crouch used to sit 8 units from its rim)
+		var reach := 2.0 * r + r + MIN_GAP + 8.0
+		var left_ids := ["reload", "crouch", "dodge"]
+		var angles := [255.0, 307.0, 359.0]
+		for i in left_ids.size():
+			var a := deg_to_rad(angles[i])
+			_place(left_ids[i], _stick_rest + Vector2(cos(a), sin(a)) * reach, r)
 	# small buttons in a 2 x 2 block beside the weapon box (under the status panel, left),
 	# clear of the messages and tutorial panel along the top
 	var small := r * 0.72
 	var origin := Vector2(margins.x + 12.0 + 230.0 + 14.0 + small, margins.y + 190.0 + small)
 	for i in TOP.size():
-		_place(TOP[i], origin + Vector2(i % 2, i / 2) * (small * 2.0 + 10.0), small)
+		_place(TOP[i], origin + Vector2(i % 2, i / 2) * (small * 2.0 + MIN_GAP + 4.0), small)
 	queue_redraw()
 
 
