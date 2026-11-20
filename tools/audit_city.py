@@ -176,6 +176,7 @@ def main():
     tiles = sorted(f[:-4] for f in os.listdir(hi_dir) if f.endswith(".glb"))
     surf = Surface()
     roads = []           # all Road triangles
+    walks = []           # sidewalk tops (floor-like Sidewalk triangles)
     buildings = []
     metas = {}
     for tag in tiles:
@@ -188,21 +189,32 @@ def main():
         r = g.get("Roads-col", {}).get("Road")
         if r is not None:
             roads.append(r)
+        s = g.get("Sidewalks-col", {}).get("Sidewalk")
+        if s is not None and len(s):
+            n = np.cross(s[:, 1] - s[:, 0], s[:, 2] - s[:, 0])
+            up = np.abs(n[:, 1]) > 0.9 * np.maximum(np.linalg.norm(n, axis=1), 1e-9)
+            walks.append(s[up])
         buildings += wall_rings(g.get("Buildings-col", {}).get("Wall"))
         mp = os.path.join(meta_dir, tag + ".json")
         if os.path.exists(mp):
             with open(mp) as f:
                 metas[tag] = json.load(f)
     roads = np.concatenate(roads) if roads else np.zeros((0, 3, 3))
-    # road triangle bins (8 m) for the overlap test
-    rbins = defaultdict(list)
-    for k, t in enumerate(roads):
-        for bx in range(int(math.floor(t[:, 0].min() / 8)), int(math.floor(t[:, 0].max() / 8)) + 1):
-            for bz in range(int(math.floor(t[:, 2].min() / 8)), int(math.floor(t[:, 2].max() / 8)) + 1):
-                rbins[(bx, bz)].append(k)
+    walks = np.concatenate(walks) if walks else np.zeros((0, 3, 3))
+
+    def bin_tris(tris):
+        out = defaultdict(list)
+        for k, t in enumerate(tris):
+            for bx in range(int(math.floor(t[:, 0].min() / 8)), int(math.floor(t[:, 0].max() / 8)) + 1):
+                for bz in range(int(math.floor(t[:, 2].min() / 8)), int(math.floor(t[:, 2].max() / 8)) + 1):
+                    out[(bx, bz)].append(k)
+        return out
+    # triangle bins (8 m) for the overlap tests
+    rbins = bin_tris(roads)
+    wbins = bin_tris(walks)
     # building masks per 8 m bin, for "prop inside a building"
     bbins = defaultdict(list)
-    report = {"buildings": len(buildings), "overlaps": [], "props": defaultdict(lambda: {"total": 0, "floating": [], "sunk": [], "in_building": [], "no_surface": []})}
+    report = {"buildings": len(buildings), "overlaps": [], "on_sidewalk": [], "props": defaultdict(lambda: {"total": 0, "floating": [], "sunk": [], "in_building": [], "no_surface": []})}
     for bi, edges in enumerate(buildings):
         xs_all = [p[0] for e in edges for p in e]
         zs_all = [p[1] for e in edges for p in e]
@@ -211,10 +223,12 @@ def main():
             for bz in range(int(math.floor(z0 / 8)), int(math.floor(z1 / 8)) + 1):
                 bbins[(bx, bz)].append(bi)
         cand = set()
+        wcand = set()
         for bx in range(int(math.floor(x0 / 8)), int(math.floor(x1 / 8)) + 1):
             for bz in range(int(math.floor(z0 / 8)), int(math.floor(z1 / 8)) + 1):
                 cand.update(rbins.get((bx, bz), ()))
-        if not cand:
+                wcand.update(wbins.get((bx, bz), ()))
+        if not cand and not wcand:
             continue
         gx = np.arange(x0 + SAMPLE / 2, x1, SAMPLE)
         gz = np.arange(z0 + SAMPLE / 2, z1, SAMPLE)
@@ -225,6 +239,14 @@ def main():
         if not inside.any():
             continue
         xs, zs = X[inside], Z[inside]
+        if wcand:
+            # kerb clearance: the building standing on a sidewalk (no walkable strip there)
+            won = points_in_tris(xs, zs, walks[sorted(wcand)])
+            warea = float(won.sum()) * SAMPLE * SAMPLE
+            if warea >= MIN_OVERLAP:
+                report["on_sidewalk"].append({"centre": [round((x0 + x1) / 2, 1), round((z0 + z1) / 2, 1)], "on_sidewalk_m2": round(warea, 1)})
+        if not cand:
+            continue
         on = points_in_tris(xs, zs, roads[sorted(cand)])
         area = float(on.sum()) * SAMPLE * SAMPLE
         if area >= MIN_OVERLAP:
@@ -276,6 +298,16 @@ def main():
     for o in ov[:15]:
         print("   at x=%.1f z=%.1f  footprint %.0f m2, %.1f m2 on tarmac" % (o["centre"][0], o["centre"][1], o["footprint_m2"], o["on_road_m2"]))
     bad = len(ov)
+    sw = report["on_sidewalk"]
+    print("buildings standing on a sidewalk (no walkable strip there): %d, %.0f m2" % (len(sw), sum(o["on_sidewalk_m2"] for o in sw)))
+    path_m = 0.0
+    kerb = 0
+    for mt in metas.values():
+        for path in mt.get("paths", []):
+            for a, b in zip(path, path[1:]):
+                path_m += math.hypot(b[0] - a[0], b[2] - a[2])
+        kerb += len(mt.get("props", [])) + len(mt.get("poles", []))
+    print("sidewalk paths for pedestrians: %.1f km; kerbside props and lamp posts: %d" % (path_m / 1000.0, kerb))
     print("props (floating > %.2f m, sunk, inside a building, nothing under them):" % FLOAT_TOL)
     for label in sorted(report["props"]):
         r = report["props"][label]
@@ -288,7 +320,7 @@ def main():
                 print("      %s %s" % (k, w))
     if out_json:
         with open(out_json, "w", encoding="utf-8", newline="\n") as f:
-            json.dump({"buildings": report["buildings"], "overlaps": ov,
+            json.dump({"buildings": report["buildings"], "overlaps": ov, "on_sidewalk": sw, "path_km": round(path_m / 1000.0, 2), "kerb_props": kerb,
                        "props": {k: v for k, v in report["props"].items()}}, f, indent=1)
     print("AUDIT %s: %d issues" % ("CLEAN" if bad == 0 else "FOUND", bad))
     if strict and bad:

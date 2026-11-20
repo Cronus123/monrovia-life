@@ -686,10 +686,12 @@ class RoadClearance:
             for j in range(int(math.floor(y0 / self.BIN)), int(math.floor(y1 / self.BIN)) + 1):
                 yield (i, j)
 
-    def add_road(self, pts, half):
+    def add_road(self, pts, half, kerb=0.0):
+        """kerb: width of the sidewalk built along it (0 for roads without one)."""
+        reach = half + kerb
         for a, b in zip(pts, pts[1:]):
-            s = (a[0], a[1], b[0], b[1], half)
-            for k in self._bins(min(a[0], b[0]) - half, min(a[1], b[1]) - half, max(a[0], b[0]) + half, max(a[1], b[1]) + half):
+            s = (a[0], a[1], b[0], b[1], half, kerb)
+            for k in self._bins(min(a[0], b[0]) - reach, min(a[1], b[1]) - reach, max(a[0], b[0]) + reach, max(a[1], b[1]) + reach):
                 self.segs[k].append(s)
 
     def add_pad(self, x, y, r):
@@ -704,10 +706,13 @@ class RoadClearance:
         return list(segs), list(pads)
 
     @staticmethod
-    def depth(xs, ys, segs, pads):
-        """How far each point is inside the tarmac (> 0: on it), vectorised."""
+    def depth(xs, ys, segs, pads, kerb=False):
+        """How far each point is inside the tarmac (> 0: on it), vectorised. kerb: the
+        sidewalks along the roads count too."""
         d = np.full(np.shape(xs), -1e9)
-        for ax, ay, bx, by, h in segs:
+        for ax, ay, bx, by, h, kw in segs:
+            if kerb:
+                h = h + kw
             dx, dy = bx - ax, by - ay
             L2 = dx * dx + dy * dy or 1e-9
             t = np.clip(((xs - ax) * dx + (ys - ay) * dy) / L2, 0.0, 1.0)
@@ -716,11 +721,14 @@ class RoadClearance:
             d = np.maximum(d, r - np.hypot(xs - px, ys - py))
         return d
 
-    def push_out(self, x, y, segs, pads, clear):
-        """Move a point straight away from any road strip / pad it is within `clear` of."""
+    def push_out(self, x, y, segs, pads, clear, kerb=False):
+        """Move a point straight away from any road strip / pad it is within `clear` of
+        (with `kerb`: of the road plus its sidewalk)."""
         for _ in range(6):
             moved = False
-            for ax, ay, bx, by, h in segs:
+            for ax, ay, bx, by, h, kw in segs:
+                if kerb:
+                    h = h + kw
                 dx, dy = bx - ax, by - ay
                 L2 = dx * dx + dy * dy or 1e-9
                 t = min(1.0, max(0.0, ((x - ax) * dx + (y - ay) * dy) / L2))
@@ -743,6 +751,35 @@ class RoadClearance:
         return None
 
 
+class FootprintIndex:
+    """Building footprints binned for "is this point in or within m of a building"."""
+    BIN = 16.0
+
+    def __init__(self, rings):
+        self.rings = rings
+        self.bins = defaultdict(list)
+        for i, ring in enumerate(rings):
+            xs = [p[0] for p in ring]
+            ys = [p[1] for p in ring]
+            for bx in range(int(math.floor((min(xs) - 2) / self.BIN)), int(math.floor((max(xs) + 2) / self.BIN)) + 1):
+                for by in range(int(math.floor((min(ys) - 2) / self.BIN)), int(math.floor((max(ys) + 2) / self.BIN)) + 1):
+                    self.bins[(bx, by)].append(i)
+
+    def near(self, x, y, margin):
+        for i in self.bins.get((int(math.floor(x / self.BIN)), int(math.floor(y / self.BIN))), ()):
+            ring = self.rings[i]
+            if _inside(ring, x, y):
+                return True
+            for k in range(len(ring)):
+                (ax, ay), (bx, by) = ring[k - 1], ring[k]
+                dx, dy = bx - ax, by - ay
+                L2 = dx * dx + dy * dy or 1e-9
+                t = min(1.0, max(0.0, ((x - ax) * dx + (y - ay) * dy) / L2))
+                if math.hypot(x - (ax + t * dx), y - (ay + t * dy)) < margin:
+                    return True
+        return False
+
+
 def _self_intersects(ring):
     n = len(ring)
     def cross(o, a, b):
@@ -758,7 +795,7 @@ def _self_intersects(ring):
     return False
 
 
-def _ring_overlap(ring, segs, pads, step=0.25):
+def _ring_overlap(ring, segs, pads, step=0.25, kerb=False):
     """Area (m2) of the footprint on tarmac, sampled like tools/audit_city.py."""
     xs = [p[0] for p in ring]
     ys = [p[1] for p in ring]
@@ -775,23 +812,13 @@ def _ring_overlap(ring, segs, pads, step=0.25):
         ins ^= ((ay > Y) != (by > Y)) & (X < (bx - ax) * (Y - ay) / (by - ay) + ax)
     if not ins.any():
         return 0.0, 0.0
-    on = RoadClearance.depth(X[ins], Y[ins], segs, pads) > 0
+    on = RoadClearance.depth(X[ins], Y[ins], segs, pads, kerb) > 0
     return float(on.sum()) * step * step, float(ins.sum()) * step * step
 
 
-def clear_building_of_roads(ring, rc, clear=0.35):
-    """Returns (ring, status): the footprint unchanged ("ok"), with its corners pushed off
-    the tarmac ("moved"), or None ("dropped") when that can't be done without wrecking it."""
-    xs = [p[0] for p in ring]
-    ys = [p[1] for p in ring]
-    segs, pads = rc.near(min(xs), min(ys), max(xs), max(ys))
-    if not segs and not pads:
-        return ring, "ok"
-    over, area = _ring_overlap(ring, segs, pads)
-    if over == 0.0:
-        return ring, "ok"
-    if over > area * 0.4:
-        return None, "dropped"
+def _push_ring(ring, rc, segs, pads, clear, kerb, area):
+    """The footprint with its corners pushed off the road (and its sidewalk, with `kerb`),
+    or None when that would wreck it (under 60 % of its area left, or self-crossing)."""
     for attempt in (0, 1):
         src = ring
         if attempt == 1:          # still clipping a pad or a bend: add corners along long walls
@@ -802,9 +829,9 @@ def clear_building_of_roads(ring, rc, clear=0.35):
                 src += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(n)]
         new = []
         for x, y in src:
-            q = rc.push_out(x, y, segs, pads, clear)
+            q = rc.push_out(x, y, segs, pads, clear, kerb)
             if q is None:
-                return None, "dropped"
+                return None
             if not new or math.hypot(q[0] - new[-1][0], q[1] - new[-1][1]) > 0.05:
                 new.append(q)
         if len(new) > 2 and math.hypot(new[0][0] - new[-1][0], new[0][1] - new[-1][1]) <= 0.05:
@@ -819,14 +846,42 @@ def clear_building_of_roads(ring, rc, clear=0.35):
                 else:
                     k += 1
         if len(new) < 3:
-            return None, "dropped"
-        a2 = polygon_area(new)
-        if a2 < area * 0.6 or _self_intersects(new):
-            return None, "dropped"
-        if _ring_overlap(new, segs, pads)[0] == 0.0:
-            return new, "moved"
-    return None, "dropped"
+            return None
+        if polygon_area(new) < area * 0.6 or _self_intersects(new):
+            return None
+        if _ring_overlap(new, segs, pads, kerb=kerb)[0] == 0.0:
+            return new
+    return None
 
+
+def clear_building_of_roads(ring, rc, clear=0.35, kerb_clear=0.3):
+    """Returns (ring, status). The footprint is kept off the road and, where it can be, off
+    the sidewalk too, so shopfronts keep a walkable strip:
+      "ok"        nowhere near either
+      "kerb"      corners pulled back behind the sidewalk
+      "sidewalk"  unchanged: stands on a sidewalk, and pulling it back would wreck it
+      "moved"     on the tarmac; pulled back off it only (the sidewalk can't be cleared)
+      "dropped"   left out (mostly on the road, or can't be cleared at all)"""
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    segs, pads = rc.near(min(xs), min(ys), max(xs), max(ys), pad=9.0)
+    if not segs and not pads:
+        return ring, "ok"
+    over, area = _ring_overlap(ring, segs, pads)
+    if area > 0.0 and over > area * 0.4:
+        return None, "dropped"
+    kover, area = _ring_overlap(ring, segs, pads, kerb=True)
+    if kover == 0.0:
+        return ring, "ok"
+    new = _push_ring(ring, rc, segs, pads, kerb_clear, True, area)
+    if new is not None:
+        return new, "kerb"
+    if over == 0.0:
+        return ring, "sidewalk"
+    new = _push_ring(ring, rc, segs, pads, clear, False, area)
+    if new is not None:
+        return new, "moved"
+    return None, "dropped"
 
 SIGN_ANGLES = [45, 135, 225, 315] + [a for a in range(0, 360, 15) if a % 90 != 45]
 
@@ -995,7 +1050,9 @@ def main():
                 ramp = min(1.0, min(L[i], total - L[i]) / 30.0)
                 hs[i] = max(hs[i], hs[i] + (deck - hs[i]) * ramp)
         ys = [hv + 0.12 + rank * 0.006 for hv in hs]
-        clearance.add_road(pts, w / 2)
+        # the sidewalk built along it below (none on bridges, dirt roads, service roads, tracks)
+        kerb_w = 0.0 if (bridge or unpaved or kind in ("service", "track")) else (2.2 if kind in MAJOR else 1.6)
+        clearance.add_road(pts, w / 2, kerb_w)
         if kind not in ("pedestrian", "track", "service"):
             ow = t.get("oneway", "no")
             graph_ways.append((kind, t.get("name", ""), 1 if ow in ("yes", "1", "true") else (-1 if ow == "-1" else 0), w, g, pts, ys))
@@ -1163,6 +1220,7 @@ def main():
     downtown = lambda x, y: DOWNTOWN[0] < x < DOWNTOWN[1] and DOWNTOWN[2] < y < DOWNTOWN[3]
     skipped_on_road = 0
     moved_clip = dropped_clip = 0
+    clear_stats = defaultdict(int)       # clear_building_of_roads outcomes
     for el in city.osm:
         t = el.get("tags", {})
         name = t.get("name", "")
@@ -1206,11 +1264,12 @@ def main():
             skipped_on_road += 1
             continue
         ring, status = clear_building_of_roads(ring, clearance)
+        clear_stats[status] += 1
         if ring is None:
             skipped_on_road += 1
             dropped_clip += 1
             continue
-        if status == "moved":
+        if status in ("moved", "kerb"):
             moved_clip += 1
             area = polygon_area(ring)
             cx = sum(p[0] for p in ring) / len(ring)
@@ -1263,6 +1322,8 @@ def main():
         count += 1
     print("buildings:", count, "(%d skipped: footprint on a carriageway, %d of them clipping one;" % (skipped_on_road, dropped_clip),
           "%d pulled back off the road)" % moved_clip, "(%.0f s)" % (time.time() - t_start))
+    print("  road / sidewalk clearance: %d pulled back behind the sidewalk, %d off the tarmac only, %d left standing on a sidewalk, %d dropped"
+          % (clear_stats["kerb"], clear_stats["moved"], clear_stats["sidewalk"], clear_stats["dropped"]))
 
     # ---------------- vegetation: palms, trees and bushes on green land, grass tuft spots
     bmask = np.zeros_like(road_mask)
@@ -1303,7 +1364,10 @@ def main():
                 nveg[2] += 1
     print("vegetation: %d trees, %d bushes, %d grass spots" % tuple(nveg))
     # sidewalk paths, props and lamp posts must stay out of buildings (some OSM footprints
-    # reach the sidewalk): drop points within 2 m of a building and split paths there
+    # still reach the sidewalk): drop points in or right by a footprint and split paths there.
+    # Tested against the footprints themselves: the 2 m raster used before also cut the
+    # walkable strip left in front of buildings pulled back behind the sidewalk.
+    fp = FootprintIndex(building_rings)
     near_b = bmask.copy()
     for dr in (-1, 0, 1):
         for dc in (-1, 0, 1):
@@ -1320,7 +1384,7 @@ def main():
         for path in mt["paths"]:
             run = []
             for q in path:
-                if in_building(q[0], q[2]):
+                if fp.near(q[0], -q[2], 0.35):
                     cut += 1
                     if len(run) >= 4:
                         new_paths.append(run)
@@ -1330,8 +1394,8 @@ def main():
             if len(run) >= 4:
                 new_paths.append(run)
         mt["paths"] = new_paths
-        mt["props"] = [q for q in mt["props"] if not in_building(q[0], q[2])]
-        mt["poles"] = [q for q in mt["poles"] if not in_building(q[0], q[2])]
+        mt["props"] = [q for q in mt["props"] if not fp.near(q[0], -q[2], 0.7)]     # a stall is 1.3 m deep
+        mt["poles"] = [q for q in mt["poles"] if not fp.near(q[0], -q[2], 0.3)]
     print("sidewalk points kept out of buildings:", cut)
     # the plant models themselves, instanced by the game at the positions in the tile meta
     veg = []
